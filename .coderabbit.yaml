@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: ko-KR
+tone_instructions: "실제 버그, 보안과 정합성을 우선하고 한국어로 간결하게 설명하세요."
+reviews:
+  profile: chill
+  high_level_summary: true
+  review_status: true
+  poem: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    base_branches: ["^main$", "^develop$"]
+  path_filters:
+    - "!**/build/**"
+    - "!**/.gradle/**"
+    - "!gradle/wrapper/*.jar"
+  path_instructions:
+    - path: "src/main/java/com/msa/notification/**"
+      instructions: |
+        Java 21, MVC, JPA, ApiResponse, 빌더, 도메인 예외와 service/impl 규칙을 유지합니다.
+        notification 데이터만 소유하며 다른 서비스 테이블이나 SQL JOIN을 사용하지 않습니다.
+        SQL은 Repository @Query만 사용합니다. 외부 호출 중 DB 잠금을 유지하지 않습니다.
+        eventId 멱등성, 작업 lease, 늦은 완료와 재시도를 검토합니다.
+        구독 URL과 auth, p256dh, 토큰과 개인키를 로그나 응답에 포함하지 않습니다.
+        늦은 410 응답이 갱신된 세대의 구독을 지우지 않게 확인합니다.
+        푸시 접수를 단말 수신, 읽음이나 exactly-once로 표현하지 않습니다.
+        새 매퍼 계층, EC2나 개발용 Flyway를 일괄 요구하지 않습니다.
+    - path: "src/test/**"
+      instructions: |
+        격리 PostgreSQL, Kafka, HTTP 대역과 합성 키를 사용합니다.
+        실제 Apple 발송이나 운영 비밀값을 요구하지 않습니다.
+        소유권과 인증 claim, 동의 철회, 중복, lease 경합과 롤백을 확인합니다.
+    - path: "src/main/resources/application*.yaml"
+      instructions: |
+        .env는 local만 읽으며 운영은 외부 주소와 HTTPS JWKS를 사용합니다.
+        개발 update, 테스트 create, 운영 validate와 커넥션 예산을 구분합니다.
+    - path: "compose.yaml"
+      instructions: |
+        앱만 실행하고 일반 PostgreSQL과 공용 Kafka를 사용합니다.
+        Linux host-gateway와 Docker bridge 접근성을 검토합니다.
+        로컬 loopback 바인딩을 운영 ALB에 그대로 적용하지 않습니다.
+    - path: "scripts/**"
+      instructions: |
+        기존 서비스 데이터나 키를 자동 삭제하지 않습니다.
+        비밀값을 콘솔로 출력하지 않고 기존 DB 역할 비밀번호를 보존합니다.
+chat:
+  auto_reply: true
