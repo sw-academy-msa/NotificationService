@@ -1,0 +1,20 @@
+# 외부 키와 .env 없이 격리 DB에서 테스트합니다.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create
+    properties:
+      hibernate:
+        hbm2ddl:
+          create_namespaces: true
+eureka:
+  client:
+    enabled: false
+notification:
+  consumer-enabled: false
+  worker-enabled: false
+  push:
+    enabled: false
+springdoc:
+  api-docs:
+    enabled: true
