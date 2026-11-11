@@ -1,0 +1,27 @@
+# 운영 DB는 일반 RDS이며 Command DB와 분리합니다. 스키마 변경은 배포 전에 별도로 검토합니다.
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:5}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+notification:
+  auth:
+    issuer: ${JWT_ISSUER}
+    audience: ${JWT_AUDIENCE}
+    jwk-set-uri: ${ACCOUNT_JWKS_URI}
+  clients:
+    scheme: https
+    account: account-service
+    ai: ai-service
+    product-query: product-query-service
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE}
+  instance:
+    hostname: ${SERVICE_HOSTNAME}

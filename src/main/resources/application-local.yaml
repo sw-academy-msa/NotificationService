@@ -1,0 +1,22 @@
+# .env는 로컬에서만 읽습니다. 실제 비밀번호는 저장소에 포함하지 않습니다.
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/notification_service}
+    username: ${DB_USERNAME:notification}
+    password: ${DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: 5
+  jpa:
+    hibernate:
+      ddl-auto: update
+notification:
+  clients:
+    # 로컬 프로필에서만 내부 서비스를 평문 http로 호출합니다.
+    scheme: http
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true

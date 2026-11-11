@@ -1,0 +1,26 @@
+# 외부 키와 .env 없이 격리 DB에서 테스트합니다.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create
+    properties:
+      hibernate:
+        hbm2ddl:
+          create_namespaces: true
+  # HTTP fixture에는 /actuator/health가 없으므로 상태 확인 대신 기본 인스턴스 목록을 씁니다.
+  cloud:
+    loadbalancer:
+      configurations: default
+eureka:
+  client:
+    enabled: false
+notification:
+  clients:
+    scheme: http
+  consumer-enabled: false
+  worker-enabled: false
+  push:
+    enabled: false
+springdoc:
+  api-docs:
+    enabled: true

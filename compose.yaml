@@ -1,0 +1,23 @@
+# 일반 DB와 공용 Kafka는 외부에서 실행합니다. 운영 포트 바인딩은 별도 설정합니다.
+services:
+  notification:
+    build: .
+    env_file: .env
+    ports:
+      - "127.0.0.1:8087:8087"
+    networks:
+      - shared-kafka
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DB_URL: jdbc:postgresql://host.docker.internal:5433/notification_service
+      ACCOUNT_JWKS_URI: http://host.docker.internal:8080/.well-known/jwks.json
+      # EXTERNAL의 localhost 메타데이터를 컨테이너 내부로 오인하지 않도록 공용 INTERNAL을 사용합니다.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      EUREKA_DEFAULT_ZONE: http://host.docker.internal:8761/eureka/
+      SERVICE_HOSTNAME: host.docker.internal
+
+networks:
+  shared-kafka:
+    external: true
+    name: stockdrop-query-kafka_default

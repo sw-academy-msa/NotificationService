@@ -1,0 +1,92 @@
+// 기존 Account와 버전, MVC, Resource Server 구성을 맞추고 알림 원본만 담당합니다.
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.1.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.msa'
+version = '0.0.1-SNAPSHOT'
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+dependencyManagement {
+    imports {
+        mavenBom 'org.springframework.cloud:spring-cloud-dependencies:2025.1.4'
+    }
+}
+
+dependencies {
+    // 공개 API에 노출되는 JOSE 타입과 VAPID 서명 구현을 명시적으로 고정합니다.
+    implementation 'org.bitbucket.b_c:jose4j:0.9.6'
+    implementation('nl.martijndwars:web-push:5.1.2') {
+        exclude group: 'org.apache.httpcomponents'
+        exclude group: 'org.asynchttpclient'
+        exclude group: 'com.beust'
+        exclude group: 'org.bouncycastle', module: 'bcprov-jdk15on'
+    }
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.83'
+
+    // 빌더 코드는 컴파일 시 생성하며 운영 실행 파일에는 Lombok 의존성을 포함하지 않습니다.
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // Prometheus 수집 형식은 Boot BOM이 관리하는 Micrometer 버전으로 제공합니다.
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+    implementation 'org.springframework.boot:spring-boot-starter-kafka'
+    implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+    // LoadBalancer가 연결 실패 시 다른 인스턴스로 재시도하는 기능(RetryLoadBalancerInterceptor)에 필요합니다.
+    implementation 'org.springframework.retry:spring-retry'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+    // 동시성·원자성은 H2 대신 격리된 실제 PostgreSQL로 검증합니다.
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation 'org.testcontainers:testcontainers-kafka'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// PostgreSQL 통합 테스트는 Docker가 필요하며 기존 개발 DB를 변경하지 않습니다.
+tasks.named('test') {
+    useJUnitPlatform()
+}
+tasks.named('jar') {
+    enabled = false
+}
+
+// 명시적으로 호출하는 로컬 도구입니다. 운영 JAR나 일반 테스트 실행에는 포함하지 않습니다.
+sourceSets {
+    localSetup {
+        java.srcDir 'scripts/java'
+        compileClasspath += sourceSets.main.runtimeClasspath
+        runtimeClasspath += sourceSets.main.runtimeClasspath
+    }
+}
+tasks.register('prepareLocalNotification', JavaExec) {
+    group = 'application'
+    description = '로컬 서비스 인증과 VAPID 키를 .env에 준비합니다. 비밀값은 출력하지 않습니다.'
+    classpath = sourceSets.localSetup.runtimeClasspath
+    mainClass = 'LocalNotificationSetup'
+    args projectDir.absolutePath
+}
+
+// 설정 도구도 임시 디렉토리에서 검증하며 실제 서비스 .env를 읽지 않습니다.
+dependencies {
+    testImplementation sourceSets.localSetup.output
+}
