@@ -11,6 +11,10 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+notification:
+  clients:
+    # 로컬 프로필에서만 내부 서비스를 평문 http로 호출합니다.
+    scheme: http
 springdoc:
   api-docs:
     enabled: true

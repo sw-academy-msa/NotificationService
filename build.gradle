@@ -47,6 +47,8 @@ dependencies {
     implementation 'io.micrometer:micrometer-registry-prometheus'
     implementation 'org.springframework.boot:spring-boot-starter-kafka'
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+    // LoadBalancer가 연결 실패 시 다른 인스턴스로 재시도하는 기능(RetryLoadBalancerInterceptor)에 필요합니다.
+    implementation 'org.springframework.retry:spring-retry'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
     runtimeOnly 'org.postgresql:postgresql'
 

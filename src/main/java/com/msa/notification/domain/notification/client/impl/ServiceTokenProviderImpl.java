@@ -8,8 +8,6 @@ import org.springframework.stereotype.Component;
 
 import tools.jackson.databind.ObjectMapper;
 
-import java.net.*;
-import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.*;
@@ -19,7 +17,7 @@ import java.util.*;
 public class ServiceTokenProviderImpl implements ServiceTokenProvider {
     private static final Set<String> SCOPES =
             Set.of("account.notifications.read", "ai.personalization.read");
-    private final HttpClient http;
+    private final InternalHttp http;
     private final ClientProperties properties;
     private final ObjectMapper mapper;
     private final JwtDecoder decoder;
@@ -29,7 +27,7 @@ public class ServiceTokenProviderImpl implements ServiceTokenProvider {
     private Instant retryAt = Instant.MIN;
 
     public ServiceTokenProviderImpl(
-            HttpClient http,
+            InternalHttp http,
             ClientProperties properties,
             ObjectMapper mapper,
             JwtDecoder decoder,
@@ -55,21 +53,17 @@ public class ServiceTokenProviderImpl implements ServiceTokenProvider {
                             .encodeToString(
                                     ("notification-service:" + properties.clientSecret())
                                             .getBytes(StandardCharsets.UTF_8));
-            var request =
-                    HttpRequest.newBuilder(
-                                    URI.create(
-                                            properties.account()
-                                                    + "/internal/v1/auth/service-tokens"))
-                            .timeout(Duration.ofSeconds(5))
-                            .header("Authorization", "Basic " + basic)
-                            .header("Content-Type", "application/x-www-form-urlencoded")
-                            .POST(
-                                    HttpRequest.BodyPublishers.ofString(
-                                            "grant_type=client_credentials&scope=account.notifications.read%20ai.personalization.read"))
-                            .build();
+            // 토큰 발급은 Account 서비스 ID로 보내 LoadBalancer가 인스턴스를 고릅니다. 비밀값은 URL·본문 대신 헤더로만 보냅니다.
             var response =
-                    http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (response.statusCode() != 200) throw new RemoteUnavailable();
+                    http.send(
+                            properties.account(),
+                            "POST",
+                            "/internal/v1/auth/service-tokens",
+                            Map.of(
+                                    "Authorization", "Basic " + basic,
+                                    "Content-Type", "application/x-www-form-urlencoded"),
+                            "grant_type=client_credentials&scope=account.notifications.read%20ai.personalization.read");
+            if (response.status() != 200) throw new RemoteUnavailable();
             var data = mapper.readTree(response.body());
             String token = data.path("access_token").asText();
             var jwt = decoder.decode(token);
@@ -96,10 +90,6 @@ public class ServiceTokenProviderImpl implements ServiceTokenProvider {
             expiresAt = jwt.getExpiresAt();
             retryAt = Instant.MIN;
             return cached;
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            retryAt = clock.instant().plusSeconds(5);
-            return valid();
         } catch (Exception ex) {
             retryAt = clock.instant().plusSeconds(5);
             return valid();

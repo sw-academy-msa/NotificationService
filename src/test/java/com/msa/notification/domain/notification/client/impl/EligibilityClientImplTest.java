@@ -77,11 +77,24 @@ class EligibilityClientImplTest {
         base = "http://127.0.0.1:" + server.getAddress().getPort();
         client =
                 new EligibilityClientImpl(
-                        HttpClient.newHttpClient(),
-                        new ClientProperties(base, base, base, "", ""),
+                        // 세 서비스 ID 모두 같은 fixture로 보내 Eureka 선택 경로만 대신합니다.
+                        new InternalHttpImpl(
+                                new FixedLoadBalancer(
+                                                Map.of(
+                                                        "account-service", base,
+                                                        "ai-service", base,
+                                                        "product-query-service", base))
+                                        .restClientBuilder().build(),
+                                properties()),
+                        properties(),
                         tokens,
                         JsonMapper.builder().build(),
                         Clock.systemUTC());
+    }
+
+    private static ClientProperties properties() {
+        return new ClientProperties(
+                "http", "account-service", "ai-service", "product-query-service", "", "");
     }
 
     @AfterEach

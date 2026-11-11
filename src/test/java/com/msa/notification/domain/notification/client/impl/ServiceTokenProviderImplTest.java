@@ -3,7 +3,7 @@ package com.msa.notification.domain.notification.client.impl;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import com.msa.notification.domain.notification.client.RemoteUnavailable;
+import com.msa.notification.domain.notification.client.*;
 import com.msa.notification.global.config.client.ClientProperties;
 import com.msa.notification.global.config.security.AuthProperties;
 import com.msa.notification.global.config.security.JwtConfig;
@@ -111,11 +111,22 @@ class ServiceTokenProviderImplTest {
                                             base + "/jwks"),
                                     clock,
                                     environment);
+            var properties =
+                    new ClientProperties(
+                            "http",
+                            "account-service",
+                            "ai-service",
+                            "product-query-service",
+                            "synthetic-secret",
+                            subject.toString());
             var provider =
                     new ServiceTokenProviderImpl(
-                            HttpClient.newHttpClient(),
-                            new ClientProperties(
-                                    base, base, base, "synthetic-secret", subject.toString()),
+                            // 고정 주소 대신 Account 서비스 ID를 fixture로 바꾸는 LoadBalancer 경로를 탑니다.
+                            new InternalHttpImpl(
+                                    new FixedLoadBalancer(Map.of("account-service", base))
+                                            .restClientBuilder().build(),
+                                    properties),
+                            properties,
                             mapper,
                             decoder,
                             clock);

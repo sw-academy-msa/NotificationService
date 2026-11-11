@@ -15,9 +15,10 @@ notification:
     audience: ${JWT_AUDIENCE}
     jwk-set-uri: ${ACCOUNT_JWKS_URI}
   clients:
-    account: ${ACCOUNT_INTERNAL_URL}
-    ai: ${AI_INTERNAL_URL}
-    product-query: ${PRODUCT_QUERY_INTERNAL_URL}
+    scheme: https
+    account: account-service
+    ai: ai-service
+    product-query: product-query-service
 eureka:
   client:
     service-url:

@@ -12,9 +12,6 @@ services:
     environment:
       DB_URL: jdbc:postgresql://host.docker.internal:5433/notification_service
       ACCOUNT_JWKS_URI: http://host.docker.internal:8080/.well-known/jwks.json
-      ACCOUNT_INTERNAL_URL: http://host.docker.internal:8080
-      AI_INTERNAL_URL: http://host.docker.internal:8086
-      PRODUCT_QUERY_INTERNAL_URL: http://host.docker.internal:8082
       # EXTERNAL의 localhost 메타데이터를 컨테이너 내부로 오인하지 않도록 공용 INTERNAL을 사용합니다.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       EUREKA_DEFAULT_ZONE: http://host.docker.internal:8761/eureka/
