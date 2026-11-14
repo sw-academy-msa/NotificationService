@@ -12,7 +12,12 @@ import java.util.UUID;
 @Table(
         name = "inbox_message",
         schema = "notification",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"event_id", "account_id"}))
+        uniqueConstraints = @UniqueConstraint(columnNames = {"event_id", "account_id"}),
+        // 계정별 최신순 목록·안 읽은 개수·모두 읽음 처리가 계정 ID로 조회합니다.
+        indexes =
+                @Index(
+                        name = "idx_inbox_account_created",
+                        columnList = "account_id,created_at,id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class InboxMessage {
