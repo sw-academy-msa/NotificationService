@@ -1,5 +1,8 @@
 # 외부 키와 .env 없이 격리 DB에서 테스트합니다.
 spring:
+  # 일반 테스트는 Hibernate로 테이블을 만들고, Flyway SQL은 FlywayMigrationTest가 따로 검증합니다.
+  flyway:
+    enabled: false
   jpa:
     hibernate:
       ddl-auto: create
