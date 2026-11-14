@@ -13,7 +13,9 @@ import java.util.UUID;
         name = "delivery_work",
         schema = "notification",
         uniqueConstraints =
-                @UniqueConstraint(columnNames = {"event_id", "kind", "subscription_key"}))
+                @UniqueConstraint(columnNames = {"event_id", "kind", "subscription_key"}),
+        // 1초 주기 작업이 대기 상태만 찾습니다. 완료된 작업이 쌓여도 전체를 읽지 않습니다.
+        indexes = @Index(name = "idx_delivery_due", columnList = "status,next_at"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class DeliveryWork {
