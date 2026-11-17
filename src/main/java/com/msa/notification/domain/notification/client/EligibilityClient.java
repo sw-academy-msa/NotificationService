@@ -8,4 +8,7 @@ public interface EligibilityClient {
 
     /** 일반 업무 알림은 Account의 최신 활성 상태만 확인합니다. */
     boolean transactionalAllowed(java.util.UUID account);
+
+    /** 상품 알림은 Account의 활성 구매자 여부와 판매 시작 알림 설정을 확인합니다. */
+    boolean saleAlertAllowed(java.util.UUID account);
 }

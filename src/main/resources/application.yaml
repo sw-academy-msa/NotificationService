@@ -52,6 +52,8 @@ server:
   forward-headers-strategy: none
 notification:
   business-consumer-enabled: ${NOTIFICATION_BUSINESS_CONSUMER_ENABLED:false}
+  # 상품 공개 이벤트 구독과 판매 시작 알림 예약입니다. 업무 알림 발송(worker)도 켜져 있어야 실제로 전달됩니다.
+  product-alert-enabled: ${NOTIFICATION_PRODUCT_ALERT_ENABLED:false}
   business:
     push-max-age: ${NOTIFICATION_BUSINESS_PUSH_MAX_AGE:7d}
   consumer-enabled: ${NOTIFICATION_CONSUMER_ENABLED:false}

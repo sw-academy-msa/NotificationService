@@ -104,6 +104,14 @@ public class SecurityConfig {
                                             HttpMethod.DELETE,
                                             "/api/v1/notifications/push-subscriptions/*")
                                     .hasAnyRole("BUYER", "SELLER", "ADMIN");
+                            // 상품 알림 신청은 구매자만 합니다. 조회는 위 GET 규칙을 따릅니다.
+                            auth.requestMatchers(
+                                            HttpMethod.PUT, "/api/v1/notifications/product-alerts/*")
+                                    .hasRole("BUYER");
+                            auth.requestMatchers(
+                                            HttpMethod.DELETE,
+                                            "/api/v1/notifications/product-alerts/*")
+                                    .hasRole("BUYER");
                             auth.requestMatchers("/api/**", "/internal/**").denyAll();
                             auth.anyRequest().authenticated();
                         })

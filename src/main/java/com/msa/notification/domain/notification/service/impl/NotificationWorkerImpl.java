@@ -136,7 +136,12 @@ public class NotificationWorkerImpl implements NotificationWorker {
     private void processBusiness(Lease work) {
         BusinessNotice event = mapper.readValue(work.payload(), BusinessNotice.class);
         business.validate(event);
-        if (!eligibility.transactionalAllowed(event.accountId())) {
+        // 상품 알림은 회원의 '판매 시작 알림' 설정이 켜져 있어야 보냅니다. 광고 동의는 요구하지 않습니다.
+        boolean allowed =
+                "PRODUCT_ALERT".equals(event.source())
+                        ? eligibility.saleAlertAllowed(event.accountId())
+                        : eligibility.transactionalAllowed(event.accountId());
+        if (!allowed) {
             store.finish(work, "SKIPPED", 0, 0);
             return;
         }

@@ -29,6 +29,10 @@ public final class NotificationResponses {
     @Builder
     public record Count(long count) {}
 
+    /** 상품 알림 신청 상태입니다. 신청하지 않았으면 createdAt은 null입니다. */
+    @Builder
+    public record ProductAlert(UUID productId, boolean subscribed, Instant createdAt) {}
+
     @Builder
     public record Subscription(UUID id, boolean active, Instant expiresAt, Instant createdAt) {}
 
