@@ -66,6 +66,8 @@ notification:
   clients:
     # 서비스 토큰과 동의 정보가 오가므로 기본 https입니다. 평문 http는 로컬·테스트 프로필에서만 허용합니다.
     scheme: https
+    # TLS 없이 VPC 안에서만 서비스끼리 통신하는 운영 배포는 scheme=http와 함께 true로 켭니다.
+    allow-plain-http: false
     account: account-service
     ai: ai-service
     product-query: product-query-service

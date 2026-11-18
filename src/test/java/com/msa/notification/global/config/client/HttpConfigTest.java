@@ -31,6 +31,26 @@ class HttpConfigTest {
     }
 
     @Test
+    void productionMayUsePlaintextOnlyWhenExplicitlyAllowed() {
+        var allowed = profile("prod");
+        allowed.setProperty("notification.clients.allow-plain-http", "true");
+        assertThatCode(
+                        () ->
+                                new HttpConfig()
+                                        .loadBalancedRestClient(
+                                                properties("http"), allowed, NO_INTERCEPTOR))
+                .doesNotThrowAnyException();
+        var disallowed = profile("prod");
+        disallowed.setProperty("notification.clients.allow-plain-http", "false");
+        assertThatThrownBy(
+                        () ->
+                                new HttpConfig()
+                                        .loadBalancedRestClient(
+                                                properties("http"), disallowed, NO_INTERCEPTOR))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void localProfileMayUsePlaintext() {
         assertThatCode(
                         () ->
