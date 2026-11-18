@@ -4,7 +4,6 @@ import com.msa.notification.domain.notification.entity.ProductAlertTarget;
 
 import jakarta.persistence.LockModeType;
 
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
@@ -38,6 +37,8 @@ public interface ProductAlertTargetRepository extends JpaRepository<ProductAlert
     List<ProductAlertTarget> dueStarts(
             @Param("until") Instant until, @Param("after") Instant after, @Param("size") int size);
 
-    @Query("select t.productId from ProductAlertTarget t where t.endsAt<:before")
-    List<UUID> ended(@Param("before") Instant before, Pageable page);
+    /** 오래전에 끝난 상품 상태를 지웁니다. 늦게 도착한 이전 버전이 다시 미래 판매로 살아나지 않도록 넉넉히 보관한 뒤 지웁니다. */
+    @Modifying
+    @Query("delete from ProductAlertTarget t where t.endsAt < :before")
+    int deleteEnded(@Param("before") Instant before);
 }

@@ -7,7 +7,6 @@ import com.msa.notification.domain.notification.exception.*;
 import com.msa.notification.domain.notification.repository.*;
 import com.msa.notification.domain.notification.service.*;
 
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +25,9 @@ import java.util.*;
 public class ProductAlertServiceImpl implements ProductAlertService {
     static final Duration START_LEAD = Duration.ofMinutes(10);
     static final int MAX_SUBSCRIPTIONS = 200;
+    static final int START_BATCH = 50;
+    static final Duration SUBSCRIPTION_RETENTION = Duration.ofDays(1);
+    static final Duration TARGET_RETENTION = Duration.ofDays(30);
 
     private final ProductAlertSubscriptionRepository subscriptions;
     private final ProductAlertTargetRepository targets;
@@ -52,6 +54,8 @@ public class ProductAlertServiceImpl implements ProductAlertService {
         if (target.getSellerId().equals(account) || !clock.instant().isBefore(target.getEndsAt()))
             throw new NotificationException(NotificationErrorCode.INVALID_REQUEST);
         UUID id = ProductAlertSubscription.key(account, product);
+        // 서로 다른 상품을 동시에 신청해도 한도를 넘지 않게 계정 단위로 순서대로 처리합니다.
+        subscriptions.lockAccount(account);
         if (!subscriptions.existsById(id)
                 && subscriptions.countByAccountId(account) >= MAX_SUBSCRIPTIONS)
             throw new NotificationException(NotificationErrorCode.CONFLICT);
@@ -117,7 +121,7 @@ public class ProductAlertServiceImpl implements ProductAlertService {
 
     public int dispatchStarts() {
         Instant now = clock.instant();
-        var due = targets.dueStarts(now.plus(START_LEAD), now, 50);
+        var due = targets.dueStarts(now.plus(START_LEAD), now, START_BATCH);
         for (var target : due) {
             target.markStartNoticed();
             notify(target, "SALE_STARTING", target.getStartsAt());
@@ -126,12 +130,11 @@ public class ProductAlertServiceImpl implements ProductAlertService {
     }
 
     public int cleanup() {
-        var ended =
-                targets.ended(clock.instant().minus(Duration.ofDays(1)), PageRequest.of(0, 500));
-        if (ended.isEmpty()) return 0;
-        subscriptions.deleteByProducts(ended);
-        targets.deleteAllById(ended);
-        return ended.size();
+        Instant now = clock.instant();
+        // 신청은 판매 종료 하루 뒤 지웁니다. 상품 상태는 Kafka 보관 기간(7일)보다 길게 남겨 늦은 이전 버전을 계속 거절합니다.
+        int removed = subscriptions.deleteEnded(now.minus(SUBSCRIPTION_RETENTION));
+        targets.deleteEnded(now.minus(TARGET_RETENTION));
+        return removed;
     }
 
     /** 남은 수량(최초 - 확보 - 확정)이 최초 수량의 20% 이하이고 품절 전일 때만 임박으로 봅니다. */

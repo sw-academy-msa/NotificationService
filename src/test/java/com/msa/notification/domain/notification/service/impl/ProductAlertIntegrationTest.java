@@ -2,7 +2,6 @@ package com.msa.notification.domain.notification.service.impl;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -16,7 +15,7 @@ import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.*;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -42,6 +41,7 @@ class ProductAlertIntegrationTest extends NotificationDatabaseSupport {
     @MockitoBean EligibilityClient eligibility;
     @MockitoBean PushSender sender;
     @MockitoBean Clock clock;
+    @MockitoBean JwtDecoder decoder;
     Instant now = Instant.parse("2030-01-01T00:00:00Z");
     Instant startsAt = now.plus(Duration.ofHours(1));
     UUID buyer, seller, product;
@@ -126,6 +126,8 @@ class ProductAlertIntegrationTest extends NotificationDatabaseSupport {
         publish(2, 10000, 10, 5, 2);
         assertThat(delivered()).isEmpty();
         publish(3, 10000, 10, 3, 5);
+        // 남은 수량이 정확히 20%(2/10)일 때 알림이 나갑니다.
+        assertThat(delivered()).containsExactly("STOCK_LOW");
         publish(4, 10000, 10, 1, 8);
         assertThat(delivered()).containsExactly("STOCK_LOW");
     }
@@ -160,41 +162,45 @@ class ProductAlertIntegrationTest extends NotificationDatabaseSupport {
     }
 
     @Test
-    void endedProductsAreCleanedUpAfterOneDay() {
-        publish(1, 10000, 10, 0, 0);
+    void endedProductsAreCleanedUpAfterOneDayButStateIsKeptLonger() {
+        publish(2, 10000, 10, 0, 0);
         alerts.subscribe(buyer, product);
         when(clock.instant()).thenReturn(startsAt.plus(Duration.ofHours(27)).plusSeconds(1));
         assertThat(alerts.cleanup()).isEqualTo(1);
         assertThat(subscriptions.count()).isZero();
+        // 상품 상태는 남아 있어 늦게 도착한 이전 버전이 판매를 되살리지 못합니다.
+        assertThat(targets.count()).isEqualTo(1);
+        publish(1, 10000, 10, 0, 0);
+        assertThat(targets.findById(product).orElseThrow().getVersion()).isEqualTo(2);
+        when(clock.instant()).thenReturn(startsAt.plus(Duration.ofHours(3)).plus(Duration.ofDays(30)).plusSeconds(1));
+        alerts.cleanup();
         assertThat(targets.count()).isZero();
     }
 
     @Test
     void httpAllowsOnlyBuyersToSubscribe() throws Exception {
         publish(1, 10000, 10, 0, 0);
+        // 실제 Bearer 요청으로 보내 보안 설정의 roles 클레임 변환까지 거치게 합니다.
+        when(decoder.decode("seller-token")).thenReturn(token(seller, "SELLER"));
+        when(decoder.decode("buyer-token")).thenReturn(token(buyer, "BUYER"));
         String path = "/api/v1/notifications/product-alerts/" + product;
-        mvc.perform(
-                        put(path)
-                                .with(
-                                        jwt().jwt(j -> j.subject(seller.toString()))
-                                                .authorities(
-                                                        new SimpleGrantedAuthority("ROLE_SELLER"))))
+        mvc.perform(put(path).header("Authorization", "Bearer seller-token"))
                 .andExpect(status().isForbidden());
-        mvc.perform(
-                        put(path)
-                                .with(
-                                        jwt().jwt(j -> j.subject(buyer.toString()))
-                                                .authorities(
-                                                        new SimpleGrantedAuthority("ROLE_BUYER"))))
+        mvc.perform(put(path).header("Authorization", "Bearer buyer-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.subscribed").value(true));
-        mvc.perform(
-                        get(path)
-                                .with(
-                                        jwt().jwt(j -> j.subject(buyer.toString()))
-                                                .authorities(
-                                                        new SimpleGrantedAuthority("ROLE_BUYER"))))
+        mvc.perform(get(path).header("Authorization", "Bearer buyer-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.subscribed").value(true));
+    }
+
+    Jwt token(UUID subject, String role) {
+        return Jwt.withTokenValue("t")
+                .header("alg", "RS256")
+                .subject(subject.toString())
+                .claim("roles", List.of(role))
+                .issuedAt(now)
+                .expiresAt(now.plusSeconds(600))
+                .build();
     }
 }

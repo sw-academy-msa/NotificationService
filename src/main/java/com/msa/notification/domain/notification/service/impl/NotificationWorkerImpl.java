@@ -3,6 +3,8 @@ package com.msa.notification.domain.notification.service.impl;
 import com.msa.notification.domain.notification.client.*;
 import com.msa.notification.domain.notification.dto.response.*;
 import com.msa.notification.domain.notification.dto.response.NotificationResponses.*;
+import com.msa.notification.domain.notification.entity.ProductAlertSubscription;
+import com.msa.notification.domain.notification.repository.ProductAlertSubscriptionRepository;
 import com.msa.notification.domain.notification.service.*;
 import com.msa.notification.global.config.push.PushProperties;
 
@@ -25,6 +27,7 @@ public class NotificationWorkerImpl implements NotificationWorker {
     private final ObjectMapper mapper;
     private final Clock clock;
     private final PushProperties properties;
+    private final ProductAlertSubscriptionRepository alertSubscriptions;
 
     public NotificationWorkerImpl(
             WorkStore store,
@@ -33,7 +36,9 @@ public class NotificationWorkerImpl implements NotificationWorker {
             ObjectMapper mapper,
             Clock clock,
             PushProperties properties,
-            BusinessNoticePolicy business) {
+            BusinessNoticePolicy business,
+            ProductAlertSubscriptionRepository alertSubscriptions) {
+        this.alertSubscriptions = alertSubscriptions;
         this.business = business;
         this.store = store;
         this.eligibility = eligibility;
@@ -141,6 +146,11 @@ public class NotificationWorkerImpl implements NotificationWorker {
                 "PRODUCT_ALERT".equals(event.source())
                         ? eligibility.saleAlertAllowed(event.accountId())
                         : eligibility.transactionalAllowed(event.accountId());
+        // 알림을 만든 뒤 구매자가 신청을 취소했으면 알림함·푸시 모두 보내지 않습니다.
+        if (allowed && "PRODUCT_ALERT".equals(event.source()))
+            allowed =
+                    alertSubscriptions.existsById(
+                            ProductAlertSubscription.key(event.accountId(), event.targetId()));
         if (!allowed) {
             store.finish(work, "SKIPPED", 0, 0);
             return;

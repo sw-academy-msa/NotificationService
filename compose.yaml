@@ -2,6 +2,8 @@
 services:
   notification:
     build: .
+    # Dockerfile의 ExitOnOutOfMemoryError로 종료되면 다시 띄웁니다(운영은 배포 스크립트가 같은 정책을 씁니다).
+    restart: unless-stopped
     env_file: .env
     ports:
       - "127.0.0.1:8087:8087"
