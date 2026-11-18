@@ -1,0 +1,11 @@
+.gradle/
+build/
+.idea/
+.env
+.env.*
+!.env.example
+.secrets/
+logs/
+*.log
+/docs/
+/AGENTS.md
