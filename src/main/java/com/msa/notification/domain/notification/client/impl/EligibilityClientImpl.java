@@ -81,6 +81,17 @@ public class EligibilityClientImpl implements EligibilityClient {
         return flag(data, "eligible");
     }
 
+    public boolean saleAlertAllowed(java.util.UUID account) {
+        var data =
+                get(
+                        properties.account(),
+                        "/internal/v1/notification-eligibility?accountId="
+                                + account
+                                + "&purpose=SALE_ALERT",
+                        true);
+        return flag(data, "eligible");
+    }
+
     private boolean flag(JsonNode value, String field) {
         if (!value.path(field).isBoolean()) throw new RemoteUnavailable();
         return value.path(field).asBoolean();

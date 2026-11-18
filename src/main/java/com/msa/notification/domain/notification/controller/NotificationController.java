@@ -3,6 +3,7 @@ package com.msa.notification.domain.notification.controller;
 import com.msa.notification.domain.notification.dto.request.SubscriptionRequest;
 import com.msa.notification.domain.notification.dto.response.NotificationResponses.*;
 import com.msa.notification.domain.notification.service.NotificationService;
+import com.msa.notification.domain.notification.service.ProductAlertService;
 import com.msa.notification.global.response.*;
 
 import jakarta.validation.Valid;
@@ -20,9 +21,11 @@ import java.util.*;
         produces = org.springframework.http.MediaType.APPLICATION_JSON_VALUE)
 public class NotificationController {
     private final NotificationService service;
+    private final ProductAlertService alerts;
 
-    public NotificationController(NotificationService service) {
+    public NotificationController(NotificationService service, ProductAlertService alerts) {
         this.service = service;
+        this.alerts = alerts;
     }
 
     @GetMapping
@@ -73,6 +76,31 @@ public class NotificationController {
     public ApiResponse<Void> unsubscribe(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
         service.unsubscribe(account(jwt), id);
         return ApiResponse.onSuccess(null, SuccessCode.OK);
+    }
+
+    /** 상품 상세의 '알림 받기'입니다. 신청자는 판매 시작·가격 인하·수량 임박 알림을 받습니다. */
+    @PutMapping("/product-alerts/{productId}")
+    public ApiResponse<ProductAlert> subscribeProduct(
+            @AuthenticationPrincipal Jwt jwt, @PathVariable UUID productId) {
+        return ApiResponse.onSuccess(alerts.subscribe(account(jwt), productId), SuccessCode.OK);
+    }
+
+    @DeleteMapping("/product-alerts/{productId}")
+    public ApiResponse<Void> unsubscribeProduct(
+            @AuthenticationPrincipal Jwt jwt, @PathVariable UUID productId) {
+        alerts.unsubscribe(account(jwt), productId);
+        return ApiResponse.onSuccess(null, SuccessCode.OK);
+    }
+
+    @GetMapping("/product-alerts/{productId}")
+    public ApiResponse<ProductAlert> productAlert(
+            @AuthenticationPrincipal Jwt jwt, @PathVariable UUID productId) {
+        return ApiResponse.onSuccess(alerts.status(account(jwt), productId), SuccessCode.OK);
+    }
+
+    @GetMapping("/product-alerts")
+    public ApiResponse<List<ProductAlert>> productAlerts(@AuthenticationPrincipal Jwt jwt) {
+        return ApiResponse.onSuccess(alerts.list(account(jwt)), SuccessCode.OK);
     }
 
     private UUID account(Jwt jwt) {

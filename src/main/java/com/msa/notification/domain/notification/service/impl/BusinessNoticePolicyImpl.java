@@ -61,6 +61,12 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
                                     || Set.of("ORDER_SHIPPED", "ORDER_DELIVERED")
                                                     .contains(event.notificationType())
                                             && "ORDER".equals(event.targetType());
+                    // 상품 알림 신청자에게 보내는 알림입니다. 푸시 기한(deadline)이 반드시 있어야 합니다.
+                    case "PRODUCT_ALERT" ->
+                            Set.of("SALE_STARTING", "PRICE_DROPPED", "STOCK_LOW")
+                                            .contains(event.notificationType())
+                                    && "PRODUCT".equals(event.targetType())
+                                    && event.deadline() != null;
                     default -> false;
                 };
         String identity =
@@ -87,7 +93,8 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
 
     public Instant pushDeadline(BusinessNotice event) {
         Instant expires = event.occurredAt().plus(properties.pushMaxAge());
-        if ("SELLER_CORRECTION_REQUESTED".equals(event.notificationType())
+        if (("SELLER_CORRECTION_REQUESTED".equals(event.notificationType())
+                        || "PRODUCT_ALERT".equals(event.source()))
                 && event.deadline().isBefore(expires)) return event.deadline();
         return expires;
     }
@@ -143,6 +150,18 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
             case "ORDER_DELIVERED" -> {
                 title = "배송 완료 안내";
                 body = "판매자가 배송 완료를 등록했습니다. 주문 내역을 확인해 주세요.";
+            }
+            case "SALE_STARTING" -> {
+                title = "판매 시작 10분 전";
+                body = "알림을 신청한 상품의 선착순 판매가 곧 시작됩니다.";
+            }
+            case "PRICE_DROPPED" -> {
+                title = "관심 상품 가격 인하";
+                body = "알림을 신청한 상품의 가격이 내려갔습니다. 상품 정보를 확인해 주세요.";
+            }
+            case "STOCK_LOW" -> {
+                title = "한정 수량 마감 임박";
+                body = "알림을 신청한 상품의 남은 수량이 얼마 남지 않았습니다.";
             }
             default -> throw invalid();
         }
