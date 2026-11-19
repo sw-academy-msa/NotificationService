@@ -43,7 +43,10 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
                                                     "SELLER_CORRECTION_REQUESTED",
                                                     "SELLER_CORRECTION_EXPIRED")
                                             .contains(event.notificationType())
-                                    && "SELLER_APPLICATION".equals(event.targetType());
+                                    && "SELLER_APPLICATION".equals(event.targetType())
+                            // 운영팀 1:1 문의 답변
+                            || "SUPPORT_ANSWERED".equals(event.notificationType())
+                                    && "SUPPORT_INQUIRY".equals(event.targetType());
                     case "PRODUCT" ->
                             Set.of("PRODUCT_APPROVED", "PRODUCT_REJECTED")
                                                     .contains(event.notificationType())
@@ -138,6 +141,10 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
             case "PRODUCT_REVISION_REJECTED" -> {
                 title = "상품 수정 심사 반려";
                 body = "상품 관리에서 수정 심사 결과를 확인해 주세요.";
+            }
+            case "SUPPORT_ANSWERED" -> {
+                title = "1:1 문의 답변";
+                body = "운영팀이 1:1 문의에 답변했어요. 문의 내역에서 확인해 주세요.";
             }
             case "ORDER_CONFIRMED" -> {
                 title = "SELLER_ORDER".equals(event.targetType()) ? "새 주문 확정" : "주문 확정";
