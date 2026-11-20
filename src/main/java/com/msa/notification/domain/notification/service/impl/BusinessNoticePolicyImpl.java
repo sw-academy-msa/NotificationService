@@ -56,14 +56,16 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
                                                             "PRODUCT_REVISION_REJECTED")
                                                     .contains(event.notificationType())
                                             && "SELLER_PRODUCT_REVISION".equals(event.targetType())
-                                            && event.relatedId() != null;
+                                            && event.relatedId() != null
+                                    || inquiryTarget(event, "PRODUCT");
                     case "ORDER" ->
                             "ORDER_CONFIRMED".equals(event.notificationType())
                                             && Set.of("ORDER", "SELLER_ORDER")
                                                     .contains(event.targetType())
                                     || Set.of("ORDER_SHIPPED", "ORDER_DELIVERED")
                                                     .contains(event.notificationType())
-                                            && "ORDER".equals(event.targetType());
+                                            && "ORDER".equals(event.targetType())
+                                    || inquiryTarget(event, "ORDER");
                     // 상품 알림 신청자에게 보내는 알림입니다. 푸시 기한(deadline)이 반드시 있어야 합니다.
                     case "PRODUCT_ALERT" ->
                             Set.of("SALE_STARTING", "PRICE_DROPPED", "STOCK_LOW")
@@ -92,6 +94,16 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
 
     public String cursor(BusinessNotice event) {
         return event.source() + ":" + event.accountId() + ":" + event.aggregateId();
+    }
+
+    /** 문의 원본 ID와 관련 상품/주문 ID를 분리하여 다른 업무의 버전과 섞이지 않게 합니다. */
+    private boolean inquiryTarget(BusinessNotice event, String domain) {
+        return event.relatedId() != null
+                && event.aggregateId().equals(event.targetId())
+                && ((domain + "_INQUIRY_CREATED").equals(event.notificationType())
+                                && ("SELLER_" + domain + "_INQUIRY").equals(event.targetType())
+                        || (domain + "_INQUIRY_ANSWERED").equals(event.notificationType())
+                                && (domain + "_INQUIRY").equals(event.targetType()));
     }
 
     public Instant pushDeadline(BusinessNotice event) {
@@ -141,6 +153,23 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
             case "PRODUCT_REVISION_REJECTED" -> {
                 title = "상품 수정 심사 반려";
                 body = "상품 관리에서 수정 심사 결과를 확인해 주세요.";
+            }
+            // 질문과 답변 원문을 푸시나 알림함에 복제하지 않습니다.
+            case "PRODUCT_INQUIRY_CREATED" -> {
+                title = "새 상품 문의";
+                body = "구매자가 상품 문의를 남겼어요. 판매자 문의함에서 답변해 주세요.";
+            }
+            case "PRODUCT_INQUIRY_ANSWERED" -> {
+                title = "상품 문의 답변";
+                body = "판매자가 상품 문의에 답변했어요. 내 문의 내역에서 확인해 주세요.";
+            }
+            case "ORDER_INQUIRY_CREATED" -> {
+                title = "새 주문 문의";
+                body = "구매자가 주문 문의를 남겼어요. 판매자 문의함에서 답변해 주세요.";
+            }
+            case "ORDER_INQUIRY_ANSWERED" -> {
+                title = "주문 문의 답변";
+                body = "판매자가 주문 문의에 답변했어요. 내 문의 내역에서 확인해 주세요.";
             }
             case "SUPPORT_ANSWERED" -> {
                 title = "1:1 문의 답변";

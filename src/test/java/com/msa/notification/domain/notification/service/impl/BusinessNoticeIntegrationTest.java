@@ -99,6 +99,27 @@ class BusinessNoticeIntegrationTest extends NotificationDatabaseSupport {
         verify(eligibility, never()).eligibleProductName(any());
     }
 
+    /** Kafka가 같은 문의 이벤트를 재전달해도 이동 정보와 알림함은 한 건만 보존합니다. */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "PRODUCT, CREATED, SELLER_PRODUCT_INQUIRY",
+        "PRODUCT, ANSWERED, PRODUCT_INQUIRY",
+        "ORDER, CREATED, SELLER_ORDER_INQUIRY",
+        "ORDER, ANSWERED, ORDER_INQUIRY"
+    })
+    void inquiryRedeliveryStoresOneMessage(String source, String action, String target) {
+        UUID related = UUID.randomUUID();
+        var event = InquiryNoticePolicyTest.event(source, action, target, related);
+        store.acceptBusiness(event);
+        store.acceptBusiness(event);
+        worker.runNext();
+        var messages = service.list(event.accountId(), 0, 20).content();
+        assertThat(messages).hasSize(1);
+        assertThat(messages.getFirst().targetType()).isEqualTo(target);
+        assertThat(messages.getFirst().targetId()).isEqualTo(event.aggregateId());
+        assertThat(messages.getFirst().relatedId()).isEqualTo(related);
+    }
+
     @Test
     void sameIdWithChangedBodyIsRejectedWithoutOverwriting() {
         var original = event("ORDER_CONFIRMED", 1, now);
