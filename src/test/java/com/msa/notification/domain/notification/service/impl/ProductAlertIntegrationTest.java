@@ -169,17 +169,76 @@ class ProductAlertIntegrationTest extends NotificationDatabaseSupport {
         when(clock.instant()).thenReturn(startsAt.minus(Duration.ofMinutes(5)));
         UUID anotherBuyer = UUID.randomUUID();
         var start = new java.util.concurrent.CountDownLatch(1);
-        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(3)) {
-            var first = pool.submit(() -> { start.await(); return alerts.subscribe(buyer, product); });
-            var second = pool.submit(() -> { start.await(); return alerts.subscribe(anotherBuyer, product); });
-            var poll = pool.submit(() -> { start.await(); return alerts.dispatchStarts(); });
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(3);
+        try {
+            var first =
+                    pool.submit(
+                            () -> {
+                                start.await();
+                                return alerts.subscribe(buyer, product);
+                            });
+            var second =
+                    pool.submit(
+                            () -> {
+                                start.await();
+                                return alerts.subscribe(anotherBuyer, product);
+                            });
+            var poll =
+                    pool.submit(
+                            () -> {
+                                start.await();
+                                return alerts.dispatchStarts();
+                            });
             start.countDown();
             first.get(20, java.util.concurrent.TimeUnit.SECONDS);
             second.get(20, java.util.concurrent.TimeUnit.SECONDS);
             poll.get(20, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            // 잠금 대기 회귀로 시간이 넘으면 남은 작업을 끊어 테스트가 멈추지 않게 합니다.
+            pool.shutdownNow();
+            pool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
         }
         assertThat(delivered()).containsExactly("SALE_STARTING");
         assertThat(service.list(anotherBuyer, 0, 20).content()).hasSize(1);
+    }
+
+    @Test
+    // 알림함 저장 전에 취소해 건너뛴 시작 알림은 같은 창 안에서 다시 신청하면 다시 대기시켜 한 번만 보냅니다.
+    void cancelBeforeDeliveryThenResubscribeStillGetsStartNotice() {
+        publish(1, 10000, 10, 0, 0);
+        when(clock.instant()).thenReturn(startsAt.minus(Duration.ofMinutes(5)));
+        alerts.subscribe(buyer, product);
+        alerts.unsubscribe(buyer, product);
+        assertThat(delivered()).isEmpty();
+        alerts.subscribe(buyer, product);
+        assertThat(delivered()).containsExactly("SALE_STARTING");
+        alerts.unsubscribe(buyer, product);
+        alerts.subscribe(buyer, product);
+        assertThat(delivered()).containsExactly("SALE_STARTING");
+    }
+
+    @Test
+    // 판매가 시작된 뒤 신청하면 지난 시작 알림을 만들지 않고 다른 상품 알림 구독만 유지합니다.
+    void subscriptionAfterStartCreatesNoStartNotice() {
+        publish(1, 10000, 10, 0, 0);
+        when(clock.instant()).thenReturn(startsAt.plusSeconds(60));
+        assertThat(alerts.subscribe(buyer, product).subscribed()).isTrue();
+        assertThat(alerts.dispatchStarts()).isZero();
+        assertThat(work.count()).isZero();
+        assertThat(delivered()).isEmpty();
+    }
+
+    @Test
+    // 시작 15분 전 신청은 바로 만들지 않고 10분 전 배치에서 한 번만 만듭니다.
+    void subscriptionBeforeWindowWaitsForDispatch() {
+        publish(1, 10000, 10, 0, 0);
+        when(clock.instant()).thenReturn(startsAt.minus(Duration.ofMinutes(15)));
+        alerts.subscribe(buyer, product);
+        assertThat(work.count()).isZero();
+        when(clock.instant()).thenReturn(startsAt.minus(Duration.ofMinutes(10)));
+        assertThat(alerts.dispatchStarts()).isEqualTo(1);
+        alerts.subscribe(buyer, product);
+        assertThat(delivered()).containsExactly("SALE_STARTING");
     }
 
     @Test

@@ -67,7 +67,8 @@ public class ProductAlertServiceImpl implements ProductAlertService {
             throw new NotificationException(NotificationErrorCode.CONFLICT);
         subscriptions.insert(id, account, product, now);
         // 10분 전 배치가 이미 지나갔어도 시작 전 창 안의 신청자는 즉시 같은 알림 경로로 보냅니다.
-        if (!alreadySubscribed && !now.isBefore(target.getStartsAt().minus(START_LEAD))
+        if (!alreadySubscribed
+                && !now.isBefore(target.getStartsAt().minus(START_LEAD))
                 && now.isBefore(target.getStartsAt())) {
             if (!target.isStartNoticed()) {
                 // 아직 배치가 처리하지 않았다면 기존 신청자까지 함께 처리하고 완료 표시를 원자 저장합니다.
@@ -178,7 +179,8 @@ public class ProductAlertServiceImpl implements ProductAlertService {
     }
 
     /** 상품 잠금 아래에서 기존 의도 유무를 확인하여 반복 신청과 취소 후 재신청도 중복 없이 처리합니다. */
-    private void notifySubscriber(ProductAlertTarget target, String type, Instant deadline, UUID account) {
+    private void notifySubscriber(
+            ProductAlertTarget target, String type, Instant deadline, UUID account) {
         String identity =
                 "PRODUCT_ALERT:"
                         + type
@@ -189,8 +191,20 @@ public class ProductAlertServiceImpl implements ProductAlertService {
                         + ":"
                         + account;
         UUID eventId = UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8));
-        // 기존 알림은 발생 시각까지 불변입니다. 같은 ID를 새 시각의 payload로 다시 저장하면 충돌합니다.
-        if (work.existsById(eventId)) return;
+        var existing = work.findById(eventId);
+        if (existing.isEmpty()) {
+            accept(target, type, deadline, account, eventId);
+            return;
+        }
+        // 기존 알림은 발생 시각까지 불변이라 다시 저장하지 않습니다.
+        // 알림함에 넣기 전 취소로 건너뛴 의도만 다시 대기시켜, 다시 신청한 구매자가 알림을 받게 합니다.
+        var row = existing.get();
+        if ("NOTICE_INTENT".equals(row.getKind()) && "SKIPPED".equals(row.getStatus()))
+            row.finish("PENDING", null, clock.instant());
+    }
+
+    private void accept(
+            ProductAlertTarget target, String type, Instant deadline, UUID account, UUID eventId) {
         store.acceptBusiness(
                 BusinessNotice.builder()
                         .eventId(eventId)
