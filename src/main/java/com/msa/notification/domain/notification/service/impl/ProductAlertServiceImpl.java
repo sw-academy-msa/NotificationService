@@ -32,34 +32,51 @@ public class ProductAlertServiceImpl implements ProductAlertService {
     private final ProductAlertSubscriptionRepository subscriptions;
     private final ProductAlertTargetRepository targets;
     private final WorkStore store;
+    private final WorkRepository work;
     private final Clock clock;
 
     public ProductAlertServiceImpl(
             ProductAlertSubscriptionRepository subscriptions,
             ProductAlertTargetRepository targets,
             WorkStore store,
+            WorkRepository work,
             Clock clock) {
         this.subscriptions = subscriptions;
         this.targets = targets;
         this.store = store;
+        this.work = work;
         this.clock = clock;
     }
 
     public ProductAlert subscribe(UUID account, UUID product) {
+        // 배치와 같은 상품 잠금을 먼저 잡아 신청 직전의 완료 표시 때문에 신청자가 빠지지 않게 합니다.
         var target =
-                targets.findById(product)
+                targets.lock(product)
                         .filter(t -> t.getVersion() >= 0)
                         .orElseThrow(() -> new NotificationException(NotificationErrorCode.NOT_FOUND));
         // 판매자 본인 상품과 이미 끝난 판매는 신청하지 않습니다.
-        if (target.getSellerId().equals(account) || !clock.instant().isBefore(target.getEndsAt()))
+        Instant now = clock.instant();
+        if (target.getSellerId().equals(account) || !now.isBefore(target.getEndsAt()))
             throw new NotificationException(NotificationErrorCode.INVALID_REQUEST);
         UUID id = ProductAlertSubscription.key(account, product);
         // 서로 다른 상품을 동시에 신청해도 한도를 넘지 않게 계정 단위로 순서대로 처리합니다.
         subscriptions.lockAccount(account);
-        if (!subscriptions.existsById(id)
+        boolean alreadySubscribed = subscriptions.existsById(id);
+        if (!alreadySubscribed
                 && subscriptions.countByAccountId(account) >= MAX_SUBSCRIPTIONS)
             throw new NotificationException(NotificationErrorCode.CONFLICT);
-        subscriptions.insert(id, account, product, clock.instant());
+        subscriptions.insert(id, account, product, now);
+        // 10분 전 배치가 이미 지나갔어도 시작 전 창 안의 신청자는 즉시 같은 알림 경로로 보냅니다.
+        if (!alreadySubscribed && !now.isBefore(target.getStartsAt().minus(START_LEAD))
+                && now.isBefore(target.getStartsAt())) {
+            if (!target.isStartNoticed()) {
+                // 아직 배치가 처리하지 않았다면 기존 신청자까지 함께 처리하고 완료 표시를 원자 저장합니다.
+                target.markStartNoticed();
+                notify(target, "SALE_STARTING", target.getStartsAt());
+            } else {
+                notifySubscriber(target, "SALE_STARTING", target.getStartsAt(), account);
+            }
+        }
         return status(account, product);
     }
 
@@ -156,33 +173,39 @@ public class ProductAlertServiceImpl implements ProductAlertService {
 
     private void notify(ProductAlertTarget target, String type, Instant deadline) {
         for (var subscription : subscriptions.findByProductId(target.getProductId())) {
-            String identity =
-                    "PRODUCT_ALERT:"
-                            + type
-                            + ":"
-                            + target.getProductId()
-                            + ":"
-                            + target.getVersion()
-                            + ":"
-                            + subscription.getAccountId();
-            store.acceptBusiness(
-                    BusinessNotice.builder()
-                            .eventId(
-                                    UUID.nameUUIDFromBytes(
-                                            identity.getBytes(StandardCharsets.UTF_8)))
-                            .schemaVersion(1)
-                            .type("BUSINESS_NOTIFICATION")
-                            .source("PRODUCT_ALERT")
-                            .accountId(subscription.getAccountId())
-                            .notificationType(type)
-                            .aggregateId(target.getProductId())
-                            .aggregateVersion(target.getVersion())
-                            .targetType("PRODUCT")
-                            .targetId(target.getProductId())
-                            .deadline(deadline)
-                            .occurredAt(clock.instant())
-                            .build());
+            notifySubscriber(target, type, deadline, subscription.getAccountId());
         }
+    }
+
+    /** 상품 잠금 아래에서 기존 의도 유무를 확인하여 반복 신청과 취소 후 재신청도 중복 없이 처리합니다. */
+    private void notifySubscriber(ProductAlertTarget target, String type, Instant deadline, UUID account) {
+        String identity =
+                "PRODUCT_ALERT:"
+                        + type
+                        + ":"
+                        + target.getProductId()
+                        + ":"
+                        + target.getVersion()
+                        + ":"
+                        + account;
+        UUID eventId = UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8));
+        // 기존 알림은 발생 시각까지 불변입니다. 같은 ID를 새 시각의 payload로 다시 저장하면 충돌합니다.
+        if (work.existsById(eventId)) return;
+        store.acceptBusiness(
+                BusinessNotice.builder()
+                        .eventId(eventId)
+                        .schemaVersion(1)
+                        .type("BUSINESS_NOTIFICATION")
+                        .source("PRODUCT_ALERT")
+                        .accountId(account)
+                        .notificationType(type)
+                        .aggregateId(target.getProductId())
+                        .aggregateVersion(target.getVersion())
+                        .targetType("PRODUCT")
+                        .targetId(target.getProductId())
+                        .deadline(deadline)
+                        .occurredAt(clock.instant())
+                        .build());
     }
 
     private ProductAlert response(ProductAlertSubscription s) {
