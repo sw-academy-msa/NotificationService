@@ -119,6 +119,129 @@ class ProductAlertIntegrationTest extends NotificationDatabaseSupport {
     }
 
     @Test
+    // 구독자가 없던 10분 전 배치가 상품을 처리한 뒤 신청한 구매자도 즉시 알림함에 도달해야 합니다.
+    void subscriberInsideWindowAfterEmptyDispatchStillGetsStartNoticeOnce() {
+        publish(1, 10000, 10, 0, 0);
+        when(clock.instant()).thenReturn(startsAt.minus(Duration.ofMinutes(10)));
+        assertThat(alerts.dispatchStarts()).isEqualTo(1);
+        assertThat(delivered()).isEmpty();
+        when(clock.instant()).thenReturn(startsAt.minus(Duration.ofMinutes(9)));
+        alerts.subscribe(buyer, product);
+        assertThat(delivered()).containsExactly("SALE_STARTING");
+        alerts.subscribe(buyer, product);
+        alerts.unsubscribe(buyer, product);
+        alerts.subscribe(buyer, product);
+        assertThat(alerts.dispatchStarts()).isZero();
+        assertThat(delivered()).containsExactly("SALE_STARTING");
+    }
+
+    @Test
+    // 앞선 신청자 발송 이후 새 구매자의 신청을 추가해도 상품 단위 완료 표시 때문에 누락하지 않습니다.
+    void newBuyerAfterEarlierSubscribersWereNotifiedGetsTheirOwnNotice() {
+        publish(1, 10000, 10, 0, 0);
+        UUID earlier = UUID.randomUUID();
+        alerts.subscribe(earlier, product);
+        when(clock.instant()).thenReturn(startsAt.minus(Duration.ofMinutes(10)));
+        alerts.dispatchStarts();
+        when(clock.instant()).thenReturn(startsAt.minusSeconds(20));
+        alerts.subscribe(buyer, product);
+        assertThat(delivered()).containsExactly("SALE_STARTING");
+        assertThat(service.list(earlier, 0, 20).content()).hasSize(1);
+    }
+
+    @Test
+    // 시작 직전 신청과 뒤따르는 배치가 같은 이벤트를 다른 발생 시각으로 중복 저장하지 않아야 합니다.
+    void subscriptionWithinWindowBeforePollAndRepeatedRequestsAreIdempotent() {
+        publish(1, 10000, 10, 0, 0);
+        when(clock.instant()).thenReturn(startsAt.minus(Duration.ofMinutes(5)));
+        alerts.subscribe(buyer, product);
+        assertThat(work.count()).isEqualTo(1);
+        when(clock.instant()).thenReturn(startsAt.minus(Duration.ofMinutes(4)));
+        alerts.dispatchStarts();
+        alerts.subscribe(buyer, product);
+        assertThat(delivered()).containsExactly("SALE_STARTING");
+    }
+
+    @Test
+    // 서로 다른 구매자의 동시 신청과 배치도 동일 상품 잠금 순서를 따라 누락 및 교착 없이 한 번씩 처리합니다.
+    void concurrentSubscriptionsAndPollEachCreateOnlyOneStartNotice() throws Exception {
+        publish(1, 10000, 10, 0, 0);
+        when(clock.instant()).thenReturn(startsAt.minus(Duration.ofMinutes(5)));
+        UUID anotherBuyer = UUID.randomUUID();
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(3);
+        try {
+            var first =
+                    pool.submit(
+                            () -> {
+                                start.await();
+                                return alerts.subscribe(buyer, product);
+                            });
+            var second =
+                    pool.submit(
+                            () -> {
+                                start.await();
+                                return alerts.subscribe(anotherBuyer, product);
+                            });
+            var poll =
+                    pool.submit(
+                            () -> {
+                                start.await();
+                                return alerts.dispatchStarts();
+                            });
+            start.countDown();
+            first.get(20, java.util.concurrent.TimeUnit.SECONDS);
+            second.get(20, java.util.concurrent.TimeUnit.SECONDS);
+            poll.get(20, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            // 잠금 대기 회귀로 시간이 넘으면 남은 작업을 끊어 테스트가 멈추지 않게 합니다.
+            pool.shutdownNow();
+            pool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        assertThat(delivered()).containsExactly("SALE_STARTING");
+        assertThat(service.list(anotherBuyer, 0, 20).content()).hasSize(1);
+    }
+
+    @Test
+    // 알림함 저장 전에 취소해 건너뛴 시작 알림은 같은 창 안에서 다시 신청하면 다시 대기시켜 한 번만 보냅니다.
+    void cancelBeforeDeliveryThenResubscribeStillGetsStartNotice() {
+        publish(1, 10000, 10, 0, 0);
+        when(clock.instant()).thenReturn(startsAt.minus(Duration.ofMinutes(5)));
+        alerts.subscribe(buyer, product);
+        alerts.unsubscribe(buyer, product);
+        assertThat(delivered()).isEmpty();
+        alerts.subscribe(buyer, product);
+        assertThat(delivered()).containsExactly("SALE_STARTING");
+        alerts.unsubscribe(buyer, product);
+        alerts.subscribe(buyer, product);
+        assertThat(delivered()).containsExactly("SALE_STARTING");
+    }
+
+    @Test
+    // 판매가 시작된 뒤 신청하면 지난 시작 알림을 만들지 않고 다른 상품 알림 구독만 유지합니다.
+    void subscriptionAfterStartCreatesNoStartNotice() {
+        publish(1, 10000, 10, 0, 0);
+        when(clock.instant()).thenReturn(startsAt.plusSeconds(60));
+        assertThat(alerts.subscribe(buyer, product).subscribed()).isTrue();
+        assertThat(alerts.dispatchStarts()).isZero();
+        assertThat(work.count()).isZero();
+        assertThat(delivered()).isEmpty();
+    }
+
+    @Test
+    // 시작 15분 전 신청은 바로 만들지 않고 10분 전 배치에서 한 번만 만듭니다.
+    void subscriptionBeforeWindowWaitsForDispatch() {
+        publish(1, 10000, 10, 0, 0);
+        when(clock.instant()).thenReturn(startsAt.minus(Duration.ofMinutes(15)));
+        alerts.subscribe(buyer, product);
+        assertThat(work.count()).isZero();
+        when(clock.instant()).thenReturn(startsAt.minus(Duration.ofMinutes(10)));
+        assertThat(alerts.dispatchStarts()).isEqualTo(1);
+        alerts.subscribe(buyer, product);
+        assertThat(delivered()).containsExactly("SALE_STARTING");
+    }
+
+    @Test
     void lowStockAlertIsSentOnceDuringSaleAtTwentyPercentRemaining() {
         publish(1, 10000, 10, 0, 0);
         alerts.subscribe(buyer, product);
