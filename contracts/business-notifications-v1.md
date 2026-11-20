@@ -61,6 +61,21 @@ Notification 기존 inbox_message.product_id 물리 컬럼은 데이터 이전 �
 
 ## 프런트 계약
 
+문의 알림은 다음 조합을 추가합니다. aggregateId와 targetId는 문의 ID이며 relatedId는 상품 또는 주문 ID로 필수입니다.
+
+|source|notificationType|targetType|수신자|
+|---|---|---|---|
+|PRODUCT|PRODUCT_INQUIRY_CREATED|SELLER_PRODUCT_INQUIRY|판매자|
+|PRODUCT|PRODUCT_INQUIRY_ANSWERED|PRODUCT_INQUIRY|구매자|
+|ORDER|ORDER_INQUIRY_CREATED|SELLER_ORDER_INQUIRY|판매자|
+|ORDER|ORDER_INQUIRY_ANSWERED|ORDER_INQUIRY|구매자|
+
+상품 버전은 문의 엔티티 버전이고 주문 버전은 문의 메시지 수입니다. 주문 추가 질문도 CREATED를 사용합니다.
+주문 생산 서비스는 문의 생성과 메시지 추가 전에 같은 주문 행의 쓰기 잠금을 먼저 획득합니다. 같은 주문의 동시 메시지는 직렬로 저장되므로 메시지 수 버전과 eventId가 메시지마다 고유합니다.
+동일 요청 재시도와 본인 문의는 생산 서비스가 제외합니다. 새 requestKey의 새 메시지는 별도 업무입니다.
+질문 및 답변 원문은 이벤트에 포함하지 않습니다. 판매자는 문의함, 구매자는 관련 상품/주문 ID를 이용해 본인 문의 상세를 조회합니다.
+추가 DB 마이그레이션이나 토픽은 필요하지 않습니다. 수신 정책과 프런트를 생산 서비스보다 먼저 배포합니다.
+
 기존 GET /api/v1/notifications와 단건/읽음/구독 API를 그대로 사용합니다.
 Message.type은 알림 종류, targetType/targetId는 화면과 원본 ID입니다.
 relatedId는 수정 심사 ID 또는 보완 요청 ID, deadline은 보완 제출 기한 UTC이며 없으면 null입니다. occurredAt은 원래 발생 시각, createdAt은 알림함 수신 시각입니다.
