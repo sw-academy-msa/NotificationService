@@ -36,7 +36,8 @@ public class MembershipNoticeConsumer {
         } catch (RuntimeException failure) {
             throw invalid();
         }
-        if (!"MEMBERSHIP".equals(event.source())
+        if (event == null
+                || !"MEMBERSHIP".equals(event.source())
                 || event.aggregateId() == null
                 || !event.aggregateId().toString().equals(record.key())) throw invalid();
         // 형식과 멱등 충돌은 즉시 DLT, DB 장애는 재시도 후 DLT로 보냅니다.
