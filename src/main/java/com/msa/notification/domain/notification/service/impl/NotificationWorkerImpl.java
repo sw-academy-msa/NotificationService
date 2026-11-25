@@ -20,6 +20,11 @@ import java.util.*;
 @Service
 public class NotificationWorkerImpl implements NotificationWorker {
     private static final Logger log = LoggerFactory.getLogger(NotificationWorkerImpl.class);
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.msa.notification.global.config.push.CampaignNoticeProperties campaignSettings =
+            new com.msa.notification.global.config.push.CampaignNoticeProperties("OFF", "");
+
     private final WorkStore store;
     private final BusinessNoticePolicy business;
     private final EligibilityClient eligibility;
@@ -141,13 +146,34 @@ public class NotificationWorkerImpl implements NotificationWorker {
     private void processBusiness(Lease work) {
         BusinessNotice event = mapper.readValue(work.payload(), BusinessNotice.class);
         business.validate(event);
+        boolean campaign = Set.of("COUPON", "CAMPAIGN").contains(event.source());
+        NoticeContent campaignContent = null;
+        if (campaign) {
+            boolean demo = campaignSettings.demoAllowed(event.accountId());
+            int hour = clock.instant().atZone(ZoneId.of("Asia/Seoul")).getHour();
+            if (!clock.instant().isBefore(event.deadline())) {
+                store.finish(work, "SKIPPED", 0, 0);
+                return;
+            }
+            if (!demo && (hour >= 21 || hour < 8)) {
+                store.finish(work, "RETRY", 0, 60);
+                return;
+            }
+            campaignContent = eligibility.campaignContent(event);
+        }
         // 상품 알림은 회원의 '판매 시작 알림' 설정이 켜져 있어야 보냅니다. 광고 동의는 요구하지 않습니다.
         boolean allowed =
-                "PRODUCT_ALERT".equals(event.source())
-                        ? eligibility.saleAlertAllowed(event.accountId())
-                        : eligibility.transactionalAllowed(event.accountId());
+                campaign
+                        ? campaignContent != null
+                        : "PRODUCT_ALERT".equals(event.source())
+                                ? eligibility.saleAlertAllowed(event.accountId())
+                                : eligibility.transactionalAllowed(event.accountId());
         // 알림을 만든 뒤 구매자가 신청을 취소했으면 알림함·푸시 모두 보내지 않습니다.
         if (allowed && "PRODUCT_ALERT".equals(event.source()))
+            allowed =
+                    alertSubscriptions.existsById(
+                            ProductAlertSubscription.key(event.accountId(), event.targetId()));
+        if (allowed && campaign && event.notificationType().endsWith("SALE_OPEN"))
             allowed =
                     alertSubscriptions.existsById(
                             ProductAlertSubscription.key(event.accountId(), event.targetId()));
@@ -156,7 +182,7 @@ public class NotificationWorkerImpl implements NotificationWorker {
             return;
         }
         if ("NOTICE_INTENT".equals(work.kind())) {
-            store.readyBusiness(work);
+            store.readyBusiness(work, campaignContent);
             return;
         }
         if (!store.currentBusiness(event)) {
@@ -181,7 +207,7 @@ public class NotificationWorkerImpl implements NotificationWorker {
             store.finish(work, "SKIPPED", 0, 0);
             return;
         }
-        var content = business.content(event);
+        var content = campaign ? campaignContent : business.content(event);
         byte[] payload =
                 mapper.writeValueAsBytes(
                         Map.of(

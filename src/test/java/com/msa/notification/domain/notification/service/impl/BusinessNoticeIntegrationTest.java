@@ -279,4 +279,58 @@ class BusinessNoticeIntegrationTest extends NotificationDatabaseSupport {
         assertThat(response.deadline()).isEqualTo(event.deadline());
         assertThat(response.body()).contains("2030.01.01 10:00", "한국 시간");
     }
+
+    BusinessNotice coupon() {
+        String type = "COUPON_EXPIRING";
+        UUID id =
+                UUID.nameUUIDFromBytes(
+                        ("COUPON:" + type + ":" + aggregate + ":1:" + account)
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return BusinessNotice.builder()
+                .eventId(id)
+                .schemaVersion(1)
+                .type("BUSINESS_NOTIFICATION")
+                .source("COUPON")
+                .accountId(account)
+                .notificationType(type)
+                .aggregateId(aggregate)
+                .aggregateVersion(1)
+                .targetType("COUPON")
+                .targetId(aggregate)
+                .deadline(now.plusSeconds(3600))
+                .occurredAt(now)
+                .build();
+    }
+
+    @Test
+    void couponConsentRevocationSuppressesInbox() {
+        when(eligibility.campaignContent(any())).thenReturn(null);
+        store.acceptBusiness(coupon());
+        worker.runNext();
+        assertThat(inbox.countByAccountIdAndReadAtIsNull(account)).isZero();
+        verify(eligibility, never()).transactionalAllowed(any());
+    }
+
+    @Test
+    void couponInboxHasAdvertisingPrefixAndCouponTarget() {
+        var e = coupon();
+        when(eligibility.campaignContent(any())).thenReturn(CouponNoticeText.content(e, "", "", 0));
+        store.acceptBusiness(e);
+        store.acceptBusiness(e);
+        worker.runNext();
+        var messages = service.list(account, 0, 20).content();
+        assertThat(messages).hasSize(1);
+        assertThat(messages.getFirst().title()).startsWith("(광고) ");
+        assertThat(messages.getFirst().targetType()).isEqualTo("COUPON");
+    }
+
+    @Test
+    void normalNightDefersBeforeConsentAndInbox() {
+        when(clock.instant()).thenReturn(Instant.parse("2030-01-01T13:00:00Z"));
+        var e = coupon();
+        store.acceptBusiness(e);
+        worker.runNext();
+        assertThat(inbox.countByAccountIdAndReadAtIsNull(account)).isZero();
+        verify(eligibility, never()).campaignContent(any());
+    }
 }

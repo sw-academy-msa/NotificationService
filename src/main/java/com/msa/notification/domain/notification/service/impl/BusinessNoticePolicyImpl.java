@@ -38,15 +38,15 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
                 switch (event.source()) {
                     case "ACCOUNT" ->
                             Set.of(
-                                                    "SELLER_APPROVED",
-                                                    "SELLER_REJECTED",
-                                                    "SELLER_CORRECTION_REQUESTED",
-                                                    "SELLER_CORRECTION_EXPIRED")
-                                            .contains(event.notificationType())
-                                    && "SELLER_APPLICATION".equals(event.targetType())
-                            // 운영팀 1:1 문의 답변
-                            || "SUPPORT_ANSWERED".equals(event.notificationType())
-                                    && "SUPPORT_INQUIRY".equals(event.targetType());
+                                                            "SELLER_APPROVED",
+                                                            "SELLER_REJECTED",
+                                                            "SELLER_CORRECTION_REQUESTED",
+                                                            "SELLER_CORRECTION_EXPIRED")
+                                                    .contains(event.notificationType())
+                                            && "SELLER_APPLICATION".equals(event.targetType())
+                                    // 운영팀 1:1 문의 답변
+                                    || "SUPPORT_ANSWERED".equals(event.notificationType())
+                                            && "SUPPORT_INQUIRY".equals(event.targetType());
                     case "PRODUCT" ->
                             Set.of("PRODUCT_APPROVED", "PRODUCT_REJECTED")
                                                     .contains(event.notificationType())
@@ -84,6 +84,32 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
                                     && event.relatedId() == null
                                     && (!"MEMBERSHIP_EXPIRING".equals(event.notificationType())
                                             || event.deadline() != null);
+                    case "COUPON" ->
+                            Set.of(
+                                                    "COUPON_SALE_OPEN",
+                                                    "COUPON_CHECKOUT_REMINDER",
+                                                    "COUPON_STOCK_REMINDER",
+                                                    "COUPON_SIMILAR_DROP",
+                                                    "COUPON_CATEGORY_NEW",
+                                                    "COUPON_EXPIRING",
+                                                    "COUPON_MEMBER_ARRIVED")
+                                            .contains(event.notificationType())
+                                    && event.deadline() != null
+                                    && (Set.of("COUPON_EXPIRING", "COUPON_MEMBER_ARRIVED")
+                                                    .contains(event.notificationType())
+                                            ? "COUPON".equals(event.targetType())
+                                            : "PRODUCT".equals(event.targetType()));
+                    case "CAMPAIGN" ->
+                            Set.of(
+                                                    "CAMPAIGN_SALE_OPEN",
+                                                    "CAMPAIGN_CHECKOUT_REMINDER",
+                                                    "CAMPAIGN_STOCK_REMINDER",
+                                                    "CAMPAIGN_SIMILAR_DROP",
+                                                    "CAMPAIGN_CATEGORY_NEW",
+                                                    "CAMPAIGN_SEARCH_MATCH")
+                                            .contains(event.notificationType())
+                                    && event.deadline() != null
+                                    && "PRODUCT".equals(event.targetType());
                     default -> false;
                 };
         String identity =
@@ -122,12 +148,16 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
         Instant expires = event.occurredAt().plus(properties.pushMaxAge());
         if (("SELLER_CORRECTION_REQUESTED".equals(event.notificationType())
                         || "PRODUCT_ALERT".equals(event.source())
-                        || "MEMBERSHIP_EXPIRING".equals(event.notificationType()))
+                        || "MEMBERSHIP_EXPIRING".equals(event.notificationType())
+                        || "COUPON".equals(event.source())
+                        || "CAMPAIGN".equals(event.source()))
                 && event.deadline().isBefore(expires)) return event.deadline();
         return expires;
     }
 
     public NoticeContent content(BusinessNotice event) {
+        if ("COUPON".equals(event.source()) || "CAMPAIGN".equals(event.source()))
+            return CouponNoticeText.content(event, "상품", "관심 카테고리", 1);
         String title, body;
         switch (event.notificationType()) {
             case "SELLER_APPROVED" -> {
