@@ -12,4 +12,4 @@ NOTIFICATION_COUPON_CONSUMER_ENABLED=false가 기본입니다. 새 토픽 stockd
 
 배포 순서: Infra 원본 토픽 및 DLT 준비, Notification 코드 배포와 AI 계정별 분석 동의 조회 API 배포, Account 권한, CouponService 준비 후 새 consumer를 켭니다. 기존 NOTIFICATION_WORKER_ENABLED와 Web Push 플래그 및 서비스 자격 증명도 필요합니다. 배포만으로 새 토픽 소비를 시작하지 않습니다.
 
-되돌리기: NOTIFICATION_COUPON_CONSUMER_ENABLED=false로 새 입력을 멈추고 AI_CAMPAIGN_MODE=OFF 및 캠페인 pause로 생산을 멈춥니다. 이미 저장된 작업은 동의와 마감 시각으로 계속 보호합니다. 토픽, DLT, 알림함, 영속 작업을 삭제하지 않습니다. 코드 복구는 develop 머지 커밋 revert PR입니다. FE COUPON target 이동, 쿠폰함 및 실제 브라우저 Push E2E는 별도입니다.
+되돌리기: NOTIFICATION_COUPON_CONSUMER_ENABLED=false로 새 입력을 멈추고 AI_CAMPAIGN_MODE=OFF 및 캠페인 pause로 생산을 멈춥니다. 같은 플래그를 끄면 이미 저장된 광고 작업도 보류하고 마감이 지나면 건너뜁니다. 동의도 계속 확인합니다. 토픽, DLT, 알림함, 영속 작업을 삭제하지 않습니다. 코드 복구는 develop 머지 커밋 revert PR입니다. FE COUPON target 이동, 쿠폰함 및 실제 브라우저 Push E2E는 별도입니다.

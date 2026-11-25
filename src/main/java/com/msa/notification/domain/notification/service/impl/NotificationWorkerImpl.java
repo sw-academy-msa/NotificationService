@@ -21,9 +21,7 @@ import java.util.*;
 public class NotificationWorkerImpl implements NotificationWorker {
     private static final Logger log = LoggerFactory.getLogger(NotificationWorkerImpl.class);
 
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.msa.notification.global.config.push.CampaignNoticeProperties campaignSettings =
-            new com.msa.notification.global.config.push.CampaignNoticeProperties("OFF", "");
+    private final com.msa.notification.global.config.push.CampaignNoticeProperties campaignSettings;
 
     private final WorkStore store;
     private final BusinessNoticePolicy business;
@@ -42,7 +40,9 @@ public class NotificationWorkerImpl implements NotificationWorker {
             Clock clock,
             PushProperties properties,
             BusinessNoticePolicy business,
-            ProductAlertSubscriptionRepository alertSubscriptions) {
+            ProductAlertSubscriptionRepository alertSubscriptions,
+            com.msa.notification.global.config.push.CampaignNoticeProperties campaignSettings) {
+        this.campaignSettings = campaignSettings;
         this.alertSubscriptions = alertSubscriptions;
         this.business = business;
         this.store = store;
@@ -155,11 +155,26 @@ public class NotificationWorkerImpl implements NotificationWorker {
                 store.finish(work, "SKIPPED", 0, 0);
                 return;
             }
+            // 소비를 끄면 이미 대기 중인 광고 푸시도 기한 안에서 보류합니다.
+            if (!campaignSettings.enabled()) {
+                store.finish(work, "RETRY", 0, 60);
+                return;
+            }
             if (!demo && (hour >= 21 || hour < 8)) {
                 store.finish(work, "RETRY", 0, 60);
                 return;
             }
             campaignContent = eligibility.campaignContent(event);
+            // 외부 조회가 끝날 때 마감과 야간 경계를 다시 판정하고 알림함 생성도 보류합니다.
+            if (!clock.instant().isBefore(event.deadline())) {
+                store.finish(work, "SKIPPED", 0, 0);
+                return;
+            }
+            int refreshedHour = clock.instant().atZone(ZoneId.of("Asia/Seoul")).getHour();
+            if (!demo && (refreshedHour >= 21 || refreshedHour < 8)) {
+                store.finish(work, "RETRY", 0, 60);
+                return;
+            }
         }
         // 상품 알림은 회원의 '판매 시작 알림' 설정이 켜져 있어야 보냅니다. 광고 동의는 요구하지 않습니다.
         boolean allowed =
@@ -229,6 +244,14 @@ public class NotificationWorkerImpl implements NotificationWorker {
                                         .putLong(event.eventId().getMostSignificantBits())
                                         .putLong(event.eventId().getLeastSignificantBits())
                                         .array());
+        // 외부 동의 조회 도중 21시 경계를 넘었을 수 있으므로 실제 전송 직전에 다시 확인합니다.
+        int sendHour = clock.instant().atZone(ZoneId.of("Asia/Seoul")).getHour();
+        if (campaign
+                && !campaignSettings.demoAllowed(event.accountId())
+                && (sendHour >= 21 || sendHour < 8)) {
+            store.finish(work, "RETRY", 0, 60);
+            return;
+        }
         var result = sender.send(subscription.get(), payload, ttl, topic);
         int status = result.status();
         String state =

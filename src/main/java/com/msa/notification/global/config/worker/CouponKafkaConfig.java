@@ -29,6 +29,13 @@ public class CouponKafkaConfig {
         var settings = new HashMap<String, Object>(consumerFactory.getConfigurationProperties());
         // Notification에는 기존 producer가 없으므로 DLT 전용 producer만 같은 브로커로 만듭니다.
         var producer = new HashMap<String, Object>();
+        // DLT도 원본 consumer와 같은 브로커 인증 및 TLS 설정을 사용합니다.
+        settings.forEach(
+                (key, value) -> {
+                    if (key.startsWith("security.")
+                            || key.startsWith("sasl.")
+                            || key.startsWith("ssl.")) producer.put(key, value);
+                });
         producer.put(
                 ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
                 settings.get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG));

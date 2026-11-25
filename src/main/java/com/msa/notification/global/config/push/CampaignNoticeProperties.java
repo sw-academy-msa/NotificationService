@@ -6,7 +6,7 @@ import java.util.*;
 
 /** 야간 시연 예외는 올바른 열 개 이하 허용 목록의 계정에만 적용합니다. */
 @ConfigurationProperties("notification.campaign")
-public record CampaignNoticeProperties(String mode, String demoAccountIds) {
+public record CampaignNoticeProperties(String mode, String demoAccountIds, boolean enabled) {
     public boolean demoAllowed(UUID account) {
         if (!"DEMO".equals(mode) || demoAccountIds == null || demoAccountIds.isBlank())
             return false;

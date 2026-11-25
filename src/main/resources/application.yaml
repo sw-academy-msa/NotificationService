@@ -52,6 +52,7 @@ server:
   forward-headers-strategy: none
 notification:
   campaign:
+    enabled: ${notification.coupon-consumer-enabled:false}
     mode: ${AI_CAMPAIGN_MODE:OFF}
     demo-account-ids: ${CAMPAIGN_DEMO_ACCOUNT_IDS:}
   coupon-consumer-enabled: ${NOTIFICATION_COUPON_CONSUMER_ENABLED:false}
