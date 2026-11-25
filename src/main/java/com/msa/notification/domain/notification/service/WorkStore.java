@@ -14,6 +14,10 @@ public interface WorkStore {
 
     void readyBusiness(Lease work);
 
+    default void readyBusiness(Lease work, NoticeContent content) {
+        readyBusiness(work);
+    }
+
     boolean currentBusiness(BusinessNotice event);
 
     Optional<Lease> claim();

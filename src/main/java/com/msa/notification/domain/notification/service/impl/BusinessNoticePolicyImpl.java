@@ -38,15 +38,15 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
                 switch (event.source()) {
                     case "ACCOUNT" ->
                             Set.of(
-                                                    "SELLER_APPROVED",
-                                                    "SELLER_REJECTED",
-                                                    "SELLER_CORRECTION_REQUESTED",
-                                                    "SELLER_CORRECTION_EXPIRED")
-                                            .contains(event.notificationType())
-                                    && "SELLER_APPLICATION".equals(event.targetType())
-                            // 운영팀 1:1 문의 답변
-                            || "SUPPORT_ANSWERED".equals(event.notificationType())
-                                    && "SUPPORT_INQUIRY".equals(event.targetType());
+                                                            "SELLER_APPROVED",
+                                                            "SELLER_REJECTED",
+                                                            "SELLER_CORRECTION_REQUESTED",
+                                                            "SELLER_CORRECTION_EXPIRED")
+                                                    .contains(event.notificationType())
+                                            && "SELLER_APPLICATION".equals(event.targetType())
+                                    // 운영팀 1:1 문의 답변
+                                    || "SUPPORT_ANSWERED".equals(event.notificationType())
+                                            && "SUPPORT_INQUIRY".equals(event.targetType());
                     case "PRODUCT" ->
                             Set.of("PRODUCT_APPROVED", "PRODUCT_REJECTED")
                                                     .contains(event.notificationType())
@@ -72,6 +72,44 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
                                             .contains(event.notificationType())
                                     && "PRODUCT".equals(event.targetType())
                                     && event.deadline() != null;
+                    // 회원제 알림은 구독 ID를 대상으로 하며 만료 예정은 혜택 종료 시각이 있어야 합니다.
+                    case "MEMBERSHIP" ->
+                            Set.of(
+                                                    "MEMBERSHIP_PAYMENT_FAILED",
+                                                    "MEMBERSHIP_RENEWED",
+                                                    "MEMBERSHIP_EXPIRING",
+                                                    "MEMBERSHIP_EXPIRED")
+                                            .contains(event.notificationType())
+                                    && "MEMBERSHIP".equals(event.targetType())
+                                    && event.relatedId() == null
+                                    && (!"MEMBERSHIP_EXPIRING".equals(event.notificationType())
+                                            || event.deadline() != null);
+                    case "COUPON" ->
+                            Set.of(
+                                                    "COUPON_SALE_OPEN",
+                                                    "COUPON_CHECKOUT_REMINDER",
+                                                    "COUPON_STOCK_REMINDER",
+                                                    "COUPON_SIMILAR_DROP",
+                                                    "COUPON_CATEGORY_NEW",
+                                                    "COUPON_EXPIRING",
+                                                    "COUPON_MEMBER_ARRIVED")
+                                            .contains(event.notificationType())
+                                    && event.deadline() != null
+                                    && (Set.of("COUPON_EXPIRING", "COUPON_MEMBER_ARRIVED")
+                                                    .contains(event.notificationType())
+                                            ? "COUPON".equals(event.targetType())
+                                            : "PRODUCT".equals(event.targetType()));
+                    case "CAMPAIGN" ->
+                            Set.of(
+                                                    "CAMPAIGN_SALE_OPEN",
+                                                    "CAMPAIGN_CHECKOUT_REMINDER",
+                                                    "CAMPAIGN_STOCK_REMINDER",
+                                                    "CAMPAIGN_SIMILAR_DROP",
+                                                    "CAMPAIGN_CATEGORY_NEW",
+                                                    "CAMPAIGN_SEARCH_MATCH")
+                                            .contains(event.notificationType())
+                                    && event.deadline() != null
+                                    && "PRODUCT".equals(event.targetType());
                     default -> false;
                 };
         String identity =
@@ -109,12 +147,17 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
     public Instant pushDeadline(BusinessNotice event) {
         Instant expires = event.occurredAt().plus(properties.pushMaxAge());
         if (("SELLER_CORRECTION_REQUESTED".equals(event.notificationType())
-                        || "PRODUCT_ALERT".equals(event.source()))
+                        || "PRODUCT_ALERT".equals(event.source())
+                        || "MEMBERSHIP_EXPIRING".equals(event.notificationType())
+                        || "COUPON".equals(event.source())
+                        || "CAMPAIGN".equals(event.source()))
                 && event.deadline().isBefore(expires)) return event.deadline();
         return expires;
     }
 
     public NoticeContent content(BusinessNotice event) {
+        if ("COUPON".equals(event.source()) || "CAMPAIGN".equals(event.source()))
+            return CouponNoticeText.content(event, "상품", "관심 카테고리", 1);
         String title, body;
         switch (event.notificationType()) {
             case "SELLER_APPROVED" -> {
@@ -199,9 +242,37 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
                 title = "한정 수량 마감 임박";
                 body = "알림을 신청한 상품의 남은 수량이 얼마 남지 않았습니다.";
             }
+            // 금액, 카드, 실패 사유는 본문에 넣지 않습니다.
+            case "MEMBERSHIP_PAYMENT_FAILED" -> {
+                title = "멤버십 결제 실패";
+                body =
+                        event.deadline() == null
+                                ? "멤버십 결제에 실패했어요. 결제 카드를 확인해 주세요."
+                                : "멤버십 정기 결제에 실패했어요. "
+                                        + seoul(event.deadline())
+                                        + "(한국 시간)까지 결제되지 않으면 혜택이 종료됩니다.";
+            }
+            case "MEMBERSHIP_RENEWED" -> {
+                title = "멤버십 갱신 완료";
+                body = "멤버십 정기 결제가 완료되어 혜택이 연장되었어요.";
+            }
+            case "MEMBERSHIP_EXPIRING" -> {
+                title = "멤버십 종료 예정";
+                body = "멤버십 혜택이 " + seoul(event.deadline()) + "(한국 시간)에 종료됩니다.";
+            }
+            case "MEMBERSHIP_EXPIRED" -> {
+                title = "멤버십 종료";
+                body = "멤버십 혜택이 종료되었어요. 멤버십 화면에서 다시 가입할 수 있어요.";
+            }
             default -> throw invalid();
         }
         return NoticeContent.builder().title(title).body(body).build();
+    }
+
+    private String seoul(Instant time) {
+        return DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm")
+                .withZone(ZoneId.of("Asia/Seoul"))
+                .format(time);
     }
 
     private NotificationException invalid() {
