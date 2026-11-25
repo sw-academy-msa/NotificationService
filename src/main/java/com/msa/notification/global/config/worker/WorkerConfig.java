@@ -14,6 +14,7 @@ import java.time.Clock;
 @EnableScheduling
 @EnableConfigurationProperties({
     PushProperties.class,
+    com.msa.notification.global.config.push.CampaignNoticeProperties.class,
     ClientProperties.class,
     com.msa.notification.global.config.push.BusinessNoticeProperties.class
 })

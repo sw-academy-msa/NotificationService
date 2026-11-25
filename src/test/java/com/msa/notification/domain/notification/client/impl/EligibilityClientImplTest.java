@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.msa.notification.domain.notification.client.*;
+import com.msa.notification.domain.notification.dto.response.BusinessNotice;
 import com.msa.notification.domain.notification.dto.response.Candidate;
 import com.msa.notification.global.config.client.ClientProperties;
 import com.sun.net.httpserver.HttpServer;
@@ -64,7 +65,7 @@ class EligibilityClientImplTest {
                                                     + "\",\"name\":\"current"
                                                     + " product\",\"status\":\"ON_SALE\",\"endsAt\":\""
                                                     + event.endsAt()
-                                                    + "\"}";
+                                                    + "\",\"stock\":{\"availableQuantity\":3},\"category\":\"신발\"}";
                     byte[] body =
                             ("{\"success\":true,\"data\":" + data + "}")
                                     .getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -84,7 +85,8 @@ class EligibilityClientImplTest {
                                                         "account-service", base,
                                                         "ai-service", base,
                                                         "product-query-service", base))
-                                        .restClientBuilder().build(),
+                                        .restClientBuilder()
+                                        .build(),
                                 properties()),
                         properties(),
                         tokens,
@@ -119,6 +121,24 @@ class EligibilityClientImplTest {
     void upstreamFailureIsNotInterpretedAsConsentDenial() {
         status.set(503);
         assertThatThrownBy(() -> client.eligibleProductName(event))
+                .isInstanceOf(RemoteUnavailable.class);
+    }
+
+    @Test
+    void campaignUsesCurrentStockAndProductName() {
+        var notice =
+                BusinessNotice.builder()
+                        .source("CAMPAIGN")
+                        .accountId(event.accountId())
+                        .targetType("PRODUCT")
+                        .targetId(event.productId())
+                        .notificationType("CAMPAIGN_STOCK_REMINDER")
+                        .build();
+        var content = client.campaignContent(notice);
+        assertThat(content.title()).isEqualTo("(광고) 남은 수량 3개");
+        assertThat(content.body()).contains("current product").doesNotContain("쿠폰");
+        status.set(500);
+        assertThatThrownBy(() -> client.campaignContent(notice))
                 .isInstanceOf(RemoteUnavailable.class);
     }
 }

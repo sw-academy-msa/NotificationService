@@ -29,6 +29,7 @@ import java.util.*;
 @SpringBootTest(
         properties = {
             "spring.profiles.active=test",
+            "notification.campaign.enabled=true",
             "notification.push.enabled=true",
             "notification.push.public-key=BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             "notification.push.private-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAE",
@@ -278,5 +279,138 @@ class BusinessNoticeIntegrationTest extends NotificationDatabaseSupport {
         assertThat(response.relatedId()).isEqualTo(related);
         assertThat(response.deadline()).isEqualTo(event.deadline());
         assertThat(response.body()).contains("2030.01.01 10:00", "한국 시간");
+    }
+
+    BusinessNotice coupon() {
+        String type = "COUPON_EXPIRING";
+        UUID id =
+                UUID.nameUUIDFromBytes(
+                        ("COUPON:" + type + ":" + aggregate + ":1:" + account)
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return BusinessNotice.builder()
+                .eventId(id)
+                .schemaVersion(1)
+                .type("BUSINESS_NOTIFICATION")
+                .source("COUPON")
+                .accountId(account)
+                .notificationType(type)
+                .aggregateId(aggregate)
+                .aggregateVersion(1)
+                .targetType("COUPON")
+                .targetId(aggregate)
+                .deadline(now.plusSeconds(3600))
+                .occurredAt(now)
+                .build();
+    }
+
+    @Test
+    void couponConsentRevocationSuppressesInbox() {
+        when(eligibility.campaignContent(any())).thenReturn(null);
+        store.acceptBusiness(coupon());
+        worker.runNext();
+        assertThat(inbox.countByAccountIdAndReadAtIsNull(account)).isZero();
+        verify(eligibility, never()).transactionalAllowed(any());
+    }
+
+    @Test
+    void couponInboxHasAdvertisingPrefixAndCouponTarget() {
+        var e = coupon();
+        when(eligibility.campaignContent(any())).thenReturn(CouponNoticeText.content(e, "", "", 0));
+        store.acceptBusiness(e);
+        store.acceptBusiness(e);
+        worker.runNext();
+        var messages = service.list(account, 0, 20).content();
+        assertThat(messages).hasSize(1);
+        assertThat(messages.getFirst().title()).startsWith("(광고) ");
+        assertThat(messages.getFirst().targetType()).isEqualTo("COUPON");
+    }
+
+    @Test
+    void normalNightDefersBeforeConsentAndInbox() {
+        now = Instant.parse("2030-01-01T13:00:00Z");
+        when(clock.instant()).thenReturn(now);
+        var e = coupon();
+        store.acceptBusiness(e);
+        worker.runNext();
+        assertThat(inbox.countByAccountIdAndReadAtIsNull(account)).isZero();
+        verify(eligibility, never()).campaignContent(any());
+        var row = work.findById(e.eventId()).orElseThrow();
+        assertThat(row.getStatus()).isEqualTo("RETRY");
+        assertThat(row.getNextAt()).isAfter(now);
+    }
+
+    @Autowired BusinessNoticePolicy policy;
+    @Autowired tools.jackson.databind.ObjectMapper mapper;
+    @Autowired com.msa.notification.global.config.push.PushProperties pushSettings;
+    @Autowired ProductAlertSubscriptionRepository alerts;
+
+    @Test
+    void disabledCouponSwitchDefersAlreadyStoredCampaignWork() {
+        store.acceptBusiness(coupon());
+        var disabledWorker =
+                new NotificationWorkerImpl(
+                        store,
+                        eligibility,
+                        sender,
+                        mapper,
+                        clock,
+                        pushSettings,
+                        policy,
+                        alerts,
+                        new com.msa.notification.global.config.push.CampaignNoticeProperties(
+                                "OFF", "", false));
+        disabledWorker.runNext();
+        assertThat(inbox.countByAccountIdAndReadAtIsNull(account)).isZero();
+        verify(eligibility, never()).campaignContent(any());
+    }
+
+    @Test
+    void crossingNightBoundaryDuringConsentLookupDoesNotSendPush() throws Exception {
+        now = Instant.parse("2030-01-01T11:59:50Z");
+        when(clock.instant()).thenReturn(now);
+        var event = coupon();
+        var content = CouponNoticeText.content(event, "", "", 0);
+        service.subscribe(account, request("boundary"));
+        when(eligibility.campaignContent(any())).thenReturn(content);
+        store.acceptBusiness(event);
+        worker.runNext();
+        when(eligibility.campaignContent(any()))
+                .thenAnswer(
+                        invocation -> {
+                            when(clock.instant()).thenReturn(Instant.parse("2030-01-01T12:00:00Z"));
+                            return content;
+                        });
+        worker.runNext();
+        verify(sender, never()).send(any(), any(), anyInt(), anyString());
+    }
+
+    @Test
+    void deadlineCrossingDuringConsentLookupDoesNotCreateInbox() {
+        var original = coupon();
+        var event =
+                new BusinessNotice(
+                        original.eventId(),
+                        1,
+                        "BUSINESS_NOTIFICATION",
+                        "COUPON",
+                        account,
+                        original.notificationType(),
+                        aggregate,
+                        1,
+                        "COUPON",
+                        aggregate,
+                        null,
+                        now.plusSeconds(5),
+                        now);
+        when(eligibility.campaignContent(any()))
+                .thenAnswer(
+                        invocation -> {
+                            when(clock.instant()).thenReturn(now.plusSeconds(6));
+                            return CouponNoticeText.content(event, "", "", 0);
+                        });
+        store.acceptBusiness(event);
+        worker.runNext();
+        assertThat(inbox.countByAccountIdAndReadAtIsNull(account)).isZero();
+        assertThat(work.findById(event.eventId()).orElseThrow().getStatus()).isEqualTo("SKIPPED");
     }
 }

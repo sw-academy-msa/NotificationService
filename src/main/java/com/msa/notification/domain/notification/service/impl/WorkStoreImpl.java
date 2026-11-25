@@ -90,10 +90,14 @@ public class WorkStoreImpl implements WorkStore {
     }
 
     public void readyBusiness(Lease lease) {
+        readyBusiness(lease, null);
+    }
+
+    public void readyBusiness(Lease lease, NoticeContent suppliedContent) {
         var row = owned(lease);
         if (row == null) return;
         var event = mapper.readValue(row.getPayload(), BusinessNotice.class);
-        var content = policy.content(event);
+        var content = suppliedContent == null ? policy.content(event) : suppliedContent;
         if (!inbox.existsByEventId(event.eventId()))
             inbox.save(
                     InboxMessage.builder()

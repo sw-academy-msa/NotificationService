@@ -6,6 +6,11 @@ import com.msa.notification.domain.notification.dto.response.Candidate;
 public interface EligibilityClient {
     String eligibleProductName(Candidate candidate);
 
+    default com.msa.notification.domain.notification.dto.response.NoticeContent campaignContent(
+            com.msa.notification.domain.notification.dto.response.BusinessNotice event) {
+        return null;
+    }
+
     /** 일반 업무 알림은 Account의 최신 활성 상태만 확인합니다. */
     boolean transactionalAllowed(java.util.UUID account);
 

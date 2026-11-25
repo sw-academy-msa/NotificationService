@@ -50,10 +50,7 @@ public class EligibilityClientImpl implements EligibilityClient {
                         true);
         if (!flag(ai, "analyticsEnabled")) return null;
         var product =
-                get(
-                        properties.productQuery(),
-                        "/api/v1/products/" + candidate.productId(),
-                        false);
+                get(properties.productQuery(), "/api/v1/products/" + candidate.productId(), false);
         if (!candidate.productId().toString().equals(product.path("id").asText())
                 || !product.path("name").isString()
                 || product.path("name").asText().isBlank()) throw new RemoteUnavailable();
@@ -90,6 +87,48 @@ public class EligibilityClientImpl implements EligibilityClient {
                                 + "&purpose=SALE_ALERT",
                         true);
         return flag(data, "eligible");
+    }
+
+    public com.msa.notification.domain.notification.dto.response.NoticeContent campaignContent(
+            com.msa.notification.domain.notification.dto.response.BusinessNotice event) {
+        var account =
+                get(
+                        properties.account(),
+                        "/internal/v1/notification-eligibility?accountId="
+                                + event.accountId()
+                                + "&purpose=PERSONALIZED",
+                        true);
+        if (!flag(account, "eligible")) return null;
+        var ai =
+                get(
+                        properties.ai(),
+                        "/internal/v1/personalization/eligibility?accountId=" + event.accountId(),
+                        true);
+        if (!flag(ai, "analyticsEnabled")) return null;
+        if ("COUPON".equals(event.targetType()))
+            return com.msa.notification.domain.notification.service.impl.CouponNoticeText.content(
+                    event, "", "", 0);
+        var p = get(properties.productQuery(), "/api/v1/products/" + event.targetId(), false);
+        if (!event.targetId().toString().equals(p.path("id").asText())
+                || !p.path("name").isString()
+                || p.path("name").asText().isBlank()) throw new RemoteUnavailable();
+        String status = p.path("status").asText();
+        if (!Set.of("UPCOMING", "ON_SALE", "SOLD_OUT", "ENDED").contains(status))
+            throw new RemoteUnavailable();
+        if ("ENDED".equals(status)
+                || !clock.instant().isBefore(Instant.parse(p.path("endsAt").asText()))) return null;
+        if ((event.notificationType().endsWith("CHECKOUT_REMINDER")
+                        || event.notificationType().endsWith("STOCK_REMINDER"))
+                && "SOLD_OUT".equals(status)) return null;
+        long remaining = 0;
+        if (event.notificationType().endsWith("STOCK_REMINDER")) {
+            if (!p.path("stock").path("availableQuantity").isIntegralNumber())
+                throw new RemoteUnavailable();
+            remaining = p.path("stock").path("availableQuantity").asLong();
+            if (remaining <= 0) return null;
+        }
+        return com.msa.notification.domain.notification.service.impl.CouponNoticeText.content(
+                event, p.path("name").asText(), p.path("category").asText("관심 카테고리"), remaining);
     }
 
     private boolean flag(JsonNode value, String field) {
