@@ -51,7 +51,9 @@ server:
   port: ${SERVER_PORT:8087}
   forward-headers-strategy: none
 notification:
+  claim-notification-enabled: ${NOTIFICATION_CLAIM_NOTIFICATION_ENABLED:false}
   campaign:
+    claim-notification-enabled: ${notification.claim-notification-enabled:false}
     enabled: ${notification.coupon-consumer-enabled:false}
     mode: ${AI_CAMPAIGN_MODE:OFF}
     demo-account-ids: ${CAMPAIGN_DEMO_ACCOUNT_IDS:}

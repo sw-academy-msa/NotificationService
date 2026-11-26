@@ -30,6 +30,7 @@ import java.util.*;
         properties = {
             "spring.profiles.active=test",
             "notification.campaign.enabled=true",
+            "notification.claim-notification-enabled=true",
             "notification.push.enabled=true",
             "notification.push.public-key=BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             "notification.push.private-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAE",
@@ -51,6 +52,85 @@ class BusinessNoticeIntegrationTest extends NotificationDatabaseSupport {
     @MockitoBean Clock clock;
     Instant now = Instant.parse("2030-01-01T00:00:00Z");
     UUID account, aggregate;
+    @Autowired ClaimCampaignFanout fanout;
+
+    com.msa.notification.domain.notification.dto.response.ClaimCampaignNotice claimNotice() {
+        return new com.msa.notification.domain.notification.dto.response.ClaimCampaignNotice(
+                UUID.nameUUIDFromBytes(
+                        ("CLAIM_CAMPAIGN:" + aggregate)
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                1,
+                "CLAIM_CAMPAIGN_NOTIFICATION",
+                aggregate,
+                "WELCOME",
+                "웰컴 쿠폰",
+                now.plusSeconds(3600),
+                now);
+    }
+
+    @Test
+    void claimBroadcastReplayedTwiceSendsOnceWithCodeAndAdvertisingText() throws Exception {
+        service.subscribe(account, request("claim"));
+        var e = claimNotice();
+        when(eligibility.campaignContent(any()))
+                .thenAnswer(inv -> CouponNoticeText.content(inv.getArgument(0), "", "", 0));
+        fanout.accept(e, aggregate.toString());
+        fanout.accept(e, aggregate.toString());
+        for (int i = 0; i < 5; i++) worker.runNext();
+        var messages = service.list(account, 0, 20).content();
+        assertThat(messages).hasSize(1);
+        assertThat(messages.getFirst().title()).isEqualTo("(광고) 쿠폰이 도착했어요");
+        assertThat(messages.getFirst().body()).isEqualTo("웰컴 쿠폰을 받아 가세요.");
+        assertThat(messages.getFirst().campaignCode()).isEqualTo("WELCOME");
+        assertThat(messages.getFirst().targetType()).isEqualTo("CLAIM_CAMPAIGN");
+        var bytes = org.mockito.ArgumentCaptor.forClass(byte[].class);
+        verify(sender, times(1)).send(any(), bytes.capture(), anyInt(), anyString());
+        assertThat(mapper.readTree(bytes.getValue()).path("campaignCode").asText())
+                .isEqualTo("WELCOME");
+    }
+
+    @Test
+    void claimConsentRevokedAfterInboxPreventsPush() throws Exception {
+        service.subscribe(account, request("claim-revoke"));
+        var e = claimNotice();
+        when(eligibility.campaignContent(any()))
+                .thenAnswer(inv -> CouponNoticeText.content(inv.getArgument(0), "", "", 0));
+        fanout.accept(e, aggregate.toString());
+        worker.runNext();
+        doReturn(null).when(eligibility).campaignContent(any());
+        worker.runNext();
+        verify(sender, never()).send(any(), any(), anyInt(), anyString());
+    }
+
+    @Test
+    void claimNightDefersAndDemoAllowListUsesExistingException() throws Exception {
+        now = Instant.parse("2030-01-01T13:00:00Z");
+        when(clock.instant()).thenReturn(now);
+        service.subscribe(account, request("claim-night"));
+        fanout.accept(claimNotice(), aggregate.toString());
+        worker.runNext();
+        assertThat(inbox.count()).isZero();
+        verify(eligibility, never()).campaignContent(any());
+        now = now.plusSeconds(60);
+        when(clock.instant()).thenReturn(now);
+        when(eligibility.campaignContent(any()))
+                .thenAnswer(inv -> CouponNoticeText.content(inv.getArgument(0), "", "", 0));
+        var demoWorker =
+                new NotificationWorkerImpl(
+                        store,
+                        eligibility,
+                        sender,
+                        mapper,
+                        clock,
+                        pushSettings,
+                        policy,
+                        alerts,
+                        new com.msa.notification.global.config.push.CampaignNoticeProperties(
+                                "DEMO", account.toString(), true, true));
+        for (int i = 0; i < 5; i++) demoWorker.runNext();
+        assertThat(inbox.count()).isEqualTo(1);
+        verify(sender, times(1)).send(any(), any(), anyInt(), anyString());
+    }
 
     @BeforeEach
     void setup() {
@@ -358,7 +438,7 @@ class BusinessNoticeIntegrationTest extends NotificationDatabaseSupport {
                         policy,
                         alerts,
                         new com.msa.notification.global.config.push.CampaignNoticeProperties(
-                                "OFF", "", false));
+                                "OFF", "", false, false));
         disabledWorker.runNext();
         assertThat(inbox.countByAccountIdAndReadAtIsNull(account)).isZero();
         verify(eligibility, never()).campaignContent(any());

@@ -151,6 +151,7 @@ public class NotificationServiceImpl implements NotificationService {
                 .targetType(row.getTargetType() == null ? "PRODUCT" : row.getTargetType())
                 .targetId(row.getTargetId())
                 .relatedId(row.getRelatedId())
+                .campaignCode(row.getCampaignCode())
                 .deadline(row.getDeadline())
                 .occurredAt(row.getOccurredAt() == null ? row.getCreatedAt() : row.getOccurredAt())
                 .createdAt(row.getCreatedAt())

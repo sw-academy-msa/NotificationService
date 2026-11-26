@@ -18,6 +18,7 @@ public final class NotificationResponses {
             String targetType,
             UUID targetId,
             UUID relatedId,
+            String campaignCode,
             Instant deadline,
             Instant occurredAt,
             Instant createdAt,
