@@ -91,6 +91,19 @@ public class EligibilityClientImpl implements EligibilityClient {
 
     public com.msa.notification.domain.notification.dto.response.NoticeContent campaignContent(
             com.msa.notification.domain.notification.dto.response.BusinessNotice event) {
+        if ("CAMPAIGN_CLAIM_AVAILABLE".equals(event.notificationType())) {
+            var claim =
+                    get(
+                            properties.account(),
+                            "/internal/v1/notification-eligibility?accountId="
+                                    + event.accountId()
+                                    + "&purpose=CLAIM_CAMPAIGN",
+                            true);
+            return flag(claim, "eligible")
+                    ? com.msa.notification.domain.notification.service.impl.CouponNoticeText
+                            .content(event, "", "", 0)
+                    : null;
+        }
         var account =
                 get(
                         properties.account(),

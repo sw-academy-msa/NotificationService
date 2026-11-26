@@ -14,6 +14,10 @@ public final class CouponNoticeText {
         boolean coupon = "COUPON".equals(e.source());
         String title, body;
         switch (e.notificationType().replace("COUPON_", "").replace("CAMPAIGN_", "")) {
+            case "CLAIM_AVAILABLE" -> {
+                title = "쿠폰이 도착했어요";
+                body = e.couponName() + "을 받아 가세요.";
+            }
             case "SALE_OPEN" -> {
                 title = "알림 신청한 상품 오픈";
                 body = name + " 판매가 시작됐어요." + (coupon ? " 전용 쿠폰을 넣어 드렸어요." : "");

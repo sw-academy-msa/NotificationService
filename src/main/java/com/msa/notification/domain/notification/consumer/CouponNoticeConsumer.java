@@ -1,7 +1,9 @@
 package com.msa.notification.domain.notification.consumer;
 
 import com.msa.notification.domain.notification.dto.response.BusinessNotice;
+import com.msa.notification.domain.notification.dto.response.ClaimCampaignNotice;
 import com.msa.notification.domain.notification.exception.*;
+import com.msa.notification.domain.notification.service.ClaimCampaignFanout;
 import com.msa.notification.domain.notification.service.WorkStore;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -17,8 +19,11 @@ import tools.jackson.databind.ObjectMapper;
 public class CouponNoticeConsumer {
     private final WorkStore store;
     private final ObjectMapper json;
+    private final ClaimCampaignFanout claimFanout;
 
-    public CouponNoticeConsumer(WorkStore store, ObjectMapper json) {
+    public CouponNoticeConsumer(
+            WorkStore store, ObjectMapper json, ClaimCampaignFanout claimFanout) {
+        this.claimFanout = claimFanout;
         this.store = store;
         this.json = json;
     }
@@ -38,6 +43,20 @@ public class CouponNoticeConsumer {
             groupId = "notification-campaign-v1",
             containerFactory = "couponKafkaListenerContainerFactory")
     public void campaign(ConsumerRecord<String, byte[]> record) {
+        ClaimCampaignNotice claim = null;
+        try {
+            if (record.value() == null || record.value().length > 16384) throw invalid();
+            if ("CLAIM_CAMPAIGN_NOTIFICATION"
+                    .equals(json.readTree(record.value()).path("type").asText()))
+                claim = json.readValue(record.value(), ClaimCampaignNotice.class);
+        } catch (RuntimeException ex) {
+            throw invalid();
+        }
+        // 계약 오류와 구분해 부분 저장 중의 장애는 기존 재시도 경로로 보냅니다.
+        if (claim != null) {
+            claimFanout.accept(claim, record.key());
+            return;
+        }
         accept(record, "CAMPAIGN");
     }
 

@@ -156,7 +156,9 @@ public class NotificationWorkerImpl implements NotificationWorker {
                 return;
             }
             // 소비를 끄면 이미 대기 중인 광고 푸시도 기한 안에서 보류합니다.
-            if (!campaignSettings.enabled()) {
+            if (!campaignSettings.enabled()
+                    || ("CAMPAIGN_CLAIM_AVAILABLE".equals(event.notificationType())
+                            && !campaignSettings.claimNotificationEnabled())) {
                 store.finish(work, "RETRY", 0, 60);
                 return;
             }
@@ -223,8 +225,8 @@ public class NotificationWorkerImpl implements NotificationWorker {
             return;
         }
         var content = campaign ? campaignContent : business.content(event);
-        byte[] payload =
-                mapper.writeValueAsBytes(
+        var pushData =
+                new LinkedHashMap<String, Object>(
                         Map.of(
                                 "notificationId",
                                 event.eventId(),
@@ -236,6 +238,8 @@ public class NotificationWorkerImpl implements NotificationWorker {
                                 event.targetType(),
                                 "targetId",
                                 event.targetId()));
+        if (event.campaignCode() != null) pushData.put("campaignCode", event.campaignCode());
+        byte[] payload = mapper.writeValueAsBytes(pushData);
         String topic =
                 Base64.getUrlEncoder()
                         .withoutPadding()

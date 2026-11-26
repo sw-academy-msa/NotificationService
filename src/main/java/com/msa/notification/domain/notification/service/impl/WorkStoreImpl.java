@@ -108,6 +108,7 @@ public class WorkStoreImpl implements WorkStore {
                             .notificationType(event.notificationType())
                             .targetType(event.targetType())
                             .relatedId(event.relatedId())
+                            .campaignCode(event.campaignCode())
                             .deadline(event.deadline())
                             .occurredAt(event.occurredAt())
                             .title(content.title())

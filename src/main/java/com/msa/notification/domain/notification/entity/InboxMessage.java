@@ -15,9 +15,7 @@ import java.util.UUID;
         uniqueConstraints = @UniqueConstraint(columnNames = {"event_id", "account_id"}),
         // 계정별 최신순 목록·안 읽은 개수·모두 읽음 처리가 계정 ID로 조회합니다.
         indexes =
-                @Index(
-                        name = "idx_inbox_account_created",
-                        columnList = "account_id,created_at,id"))
+                @Index(name = "idx_inbox_account_created", columnList = "account_id,created_at,id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class InboxMessage {
@@ -37,6 +35,7 @@ public class InboxMessage {
     private String targetType;
     private UUID relatedId;
     private Instant deadline;
+    private String campaignCode;
 
     /** 지연 수신된 일반 알림도 원래 발생 시각을 표시할 수 있게 수신 시각과 구분합니다. */
     private Instant occurredAt;
@@ -64,6 +63,7 @@ public class InboxMessage {
             UUID relatedId,
             Instant deadline,
             Instant occurredAt,
+            String campaignCode,
             String title,
             String body,
             Instant createdAt) {
@@ -77,6 +77,7 @@ public class InboxMessage {
         this.relatedId = relatedId;
         this.deadline = deadline;
         this.occurredAt = occurredAt;
+        this.campaignCode = campaignCode;
         this.title = title;
         this.body = body;
         this.createdAt = createdAt;
