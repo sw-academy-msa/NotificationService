@@ -100,16 +100,24 @@ public class BusinessNoticePolicyImpl implements BusinessNoticePolicy {
                                             ? "COUPON".equals(event.targetType())
                                             : "PRODUCT".equals(event.targetType()));
                     case "CAMPAIGN" ->
-                            Set.of(
-                                                    "CAMPAIGN_SALE_OPEN",
-                                                    "CAMPAIGN_CHECKOUT_REMINDER",
-                                                    "CAMPAIGN_STOCK_REMINDER",
-                                                    "CAMPAIGN_SIMILAR_DROP",
-                                                    "CAMPAIGN_CATEGORY_NEW",
-                                                    "CAMPAIGN_SEARCH_MATCH")
-                                            .contains(event.notificationType())
-                                    && event.deadline() != null
-                                    && "PRODUCT".equals(event.targetType());
+                            ("CAMPAIGN_CLAIM_AVAILABLE".equals(event.notificationType())
+                                            && "CLAIM_CAMPAIGN".equals(event.targetType())
+                                            && event.deadline() != null
+                                            && event.campaignCode() != null
+                                            && event.campaignCode().matches("[A-Z0-9_]{1,40}")
+                                            && event.couponName() != null
+                                            && !event.couponName().isBlank()
+                                            && event.couponName().length() <= 60)
+                                    || Set.of(
+                                                            "CAMPAIGN_SALE_OPEN",
+                                                            "CAMPAIGN_CHECKOUT_REMINDER",
+                                                            "CAMPAIGN_STOCK_REMINDER",
+                                                            "CAMPAIGN_SIMILAR_DROP",
+                                                            "CAMPAIGN_CATEGORY_NEW",
+                                                            "CAMPAIGN_SEARCH_MATCH")
+                                                    .contains(event.notificationType())
+                                            && event.deadline() != null
+                                            && "PRODUCT".equals(event.targetType());
                     default -> false;
                 };
         String identity =
